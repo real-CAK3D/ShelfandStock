@@ -38,6 +38,7 @@ const P = {
 export const icon = (name, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
 
 export function haptic(ms = 12) {
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return; // browsers block vibration before the first tap
   if (state.settings.haptics && navigator.vibrate) try { navigator.vibrate(ms); } catch { }
 }
 
