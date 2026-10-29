@@ -1,5 +1,5 @@
 // Offline-first service worker for the hosted/PWA build (the Android APK bundles files directly).
-const CACHE = 'shelfstock-v4';
+const CACHE = 'shelfstock-v5';
 const CORE = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/main.js', 'js/store.js', 'js/router.js', 'js/data/foods.js', 'js/data/recipes.js', 'js/data/holidays.js', 'js/data/layout.js',
   'js/ui/dom.js', 'js/ui/itemSheet.js', 'js/ui/label.js', 'js/ui/tour.js', 'js/ui/help.js', 'vendor/zxing.min.js', 'js/services/off.js', 'js/services/mealdb.js', 'js/services/sync.js', 'js/services/people.js', 'js/services/vision.js', 'js/services/live.js', 'js/services/stores.js', 'js/services/ocr.js', 'js/services/notify.js',

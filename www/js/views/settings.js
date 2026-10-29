@@ -109,7 +109,8 @@ export function render(root) {
     <div class="card pad" style="margin-bottom:14px">
       <button class="btn btn-wood wood-mid btn-block" data-tour-again>🧭 Replay the walkthrough</button>
       <div class="spacer"></div>
-      <div class="row" style="gap:8px"><button class="btn btn-ghost grow btn-sm" data-sample>Load sample kitchen</button><button class="btn btn-danger grow btn-sm" data-wipe>Erase everything</button></div>
+      <div class="row" style="gap:8px"><button class="btn btn-ghost grow btn-sm" data-sample>Load sample kitchen</button><button class="btn btn-danger grow btn-sm" data-wipe>Start over</button></div>
+      <p class="small muted" style="margin:8px 0 0">Start over empties the kitchen and brings back the welcome screen, where you can pick an empty kitchen. People and PINs stay.</p>
     </div>
 
     <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.3 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
@@ -188,7 +189,7 @@ export function render(root) {
     if (e.target.closest('[data-export]')) return exportData();
     if (e.target.closest('[data-tour-again]')) return actions.tour(true);
     if (e.target.closest('[data-sample]')) { if (await confirmBox('Replace your kitchen with the sample kitchen?', { ok: 'Load sample' })) { seedSample(); toast('Sample kitchen loaded', { icon: '🏠' }); actions.go('kitchen'); } return; }
-    if (e.target.closest('[data-wipe]')) { if (await confirmBox('Erase every item, list, plan and recipe? This cannot be undone.', { ok: 'Erase', danger: true })) { resetAll(); location.reload(); } }
+    if (e.target.closest('[data-wipe]')) return startOver();
   };
   root.onchange = e => {
     const t = e.target;
@@ -214,6 +215,27 @@ function exportData() {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast('Backup saved', { icon: '💾' });
+}
+
+// Start over. When this phone shares a household, ask whether to clear it for everyone or just break off this phone.
+function startOver() {
+  const synced = !!syncInfo().code;
+  openSheet({
+    title: 'Start over?',
+    html: `<p style="margin:0 0 14px;color:var(--ink-2)">Every item, list, plan, recipe, store and price is erased, and the welcome screen comes back so you can pick <b>Start with an empty kitchen</b>. People and PINs stay. This can’t be undone; Export a backup first if you might want it.</p>
+      ${synced ? `<button class="btn btn-danger btn-block" data-over="house">Start over for the whole house</button>
+        <p class="small muted" style="margin:6px 2px 12px">Everyone’s phone gets the empty kitchen on its next sync.</p>
+        <button class="btn btn-ghost btn-block" data-over="phone">Just this phone (leave the household)</button>
+        <p class="small muted" style="margin:6px 2px 0">The shared kitchen stays as it is for everyone else.</p>`
+      : `<button class="btn btn-danger btn-block" data-over="phone">Start over</button>`}`,
+    onMount: (b, close) => b.querySelectorAll('[data-over]').forEach(btn => btn.onclick = async () => {
+      b.querySelectorAll('button').forEach(x => x.disabled = true);
+      if (btn.dataset.over === 'phone') leaveHousehold();
+      resetAll();
+      if (btn.dataset.over === 'house') { await push(); if (syncInfo().status === 'offline') { toast('Couldn’t reach the cloud; it’ll clear when you’re back online', { icon: '⚠️' }); await new Promise(r => setTimeout(r, 1500)); } }
+      close(); location.reload();
+    }),
+  });
 }
 
 async function importData(file) {

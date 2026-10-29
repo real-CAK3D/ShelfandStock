@@ -106,7 +106,13 @@ export function replaceState(next) {
   subs.forEach(s => s('replace'));
 }
 
-export const resetAll = () => replaceState(blank());
+// Start over: a blank kitchen (the welcome screen comes back), keeping the household's people and PINs.
+// Saved right away, not on the debounce, because callers reload the page next.
+export function resetAll() {
+  replaceState({ ...blank(), members: state.members || [] });
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.removeItem(OLD_KEY); } catch (e) { console.error('save failed', e); }
+}
 
 // ---------- lookups ----------
 
