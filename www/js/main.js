@@ -1,6 +1,6 @@
 // App shell: routing, tab bar, global search, back handling and wiring between modules.
 
-import { state, subscribe, addToList, addItem, allRecipes, sectionById, itemStatus, catOf } from './store.js';
+import { state, subscribe, update, addToList, addItem, allRecipes, sectionById, itemStatus, catOf } from './store.js';
 import { searchFoods } from './data/foods.js';
 import { $, $$, esc, icon, openSheet, closeSheet, sheetOpen, haptic, toast, flyTo, imgOrEmoji } from './ui/dom.js';
 import { showItem, addFlow, crumb } from './ui/itemSheet.js';
@@ -8,6 +8,13 @@ import { register, actions } from './router.js';
 import { welcome, tour } from './ui/tour.js';
 import { toggleHelp } from './ui/help.js';
 import { startSync } from './services/sync.js';
+import { me, seedMembers, signOut, setPin, avatar, AVATARS, resetPin } from './services/people.js';
+import { loginScreen } from './ui/login.js';
+import { startSeasons } from './ui/seasons.js';
+import { startLive, onLive, setDoing, announce, reconnectLive } from './services/live.js';
+import { startStoreWatch, onHere } from './services/stores.js';
+import { liveStripHTML, liveSheet, line } from './ui/house.js';
+import { photoFromFile } from './services/vision.js';
 import * as kitchen from './views/kitchen.js';
 import * as stock from './views/stock.js';
 import * as recipes from './views/recipes.js';
@@ -26,6 +33,7 @@ app.innerHTML = `
   <header class="topbar wood-dark">
     <div class="brand"><img class="brand-mark" src="icons/icon.svg" alt=""><div style="min-width:0"><h1>Shelf &amp; Stock</h1><div class="sub" data-sub></div></div></div>
     <button class="icon-btn" data-act="help" aria-label="Help" style="font:700 19px Fraunces,Georgia,serif">?</button>
+    <button class="me-btn" data-act="me" aria-label="Your profile"></button>
     <button class="icon-btn" data-act="search" aria-label="Search">${icon('search')}</button>
     <button class="icon-btn" data-act="settings" aria-label="Settings">${icon('gear')}</button>
   </header>
@@ -57,6 +65,7 @@ function go(name, params = {}, { animate = true } = {}) {
   if (!VIEWS[name]) name = 'kitchen';
   const same = name === current;
   current = name;
+  setDoing(VIEW_DOING[name]);
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.v === name));
   placeGlow();
   $('[data-sub]').textContent = SUBTITLE[name]();
@@ -72,7 +81,12 @@ subscribe(why => {
   if (why === 'replace') return go(current, {}, { animate: false });
   const y = view.scrollTop;
   const focused = document.activeElement && view.contains(document.activeElement) && document.activeElement.matches('input[type=text],input:not([type]),textarea') ? document.activeElement : null;
-  if (focused) { badges(); return; }
+  if (focused) {
+    // don't yank the text box out from under someone typing; redraw once they leave it
+    badges();
+    if (!focused._pending) { focused._pending = true; focused.addEventListener('blur', () => { focused._pending = false; const y2 = view.scrollTop; VIEWS[current].render(view, {}); view.scrollTop = y2; }, { once: true }); }
+    return;
+  }
   VIEWS[current].render(view, {});
   view.scrollTop = y;
   $('[data-sub]').textContent = SUBTITLE[current]();
@@ -87,6 +101,8 @@ document.addEventListener('click', e => {
   if (act?.dataset.act === 'settings') { haptic(); return go('settings'); }
   if (act?.dataset.act === 'search') { haptic(); return globalSearch(); }
   if (act?.dataset.act === 'help') return toggleHelp(() => current);
+  if (act?.dataset.act === 'me') { haptic(); return profileSheet(); }
+  if (e.target.closest('[data-live-open]')) { haptic(); return liveSheet(); }
 });
 
 function closeOverlays() { document.querySelector('.inside')?._close?.(); }
@@ -174,14 +190,57 @@ window.addEventListener('resize', placeGlow);
 document.documentElement.dataset.wood = state.settings.wood;
 subscribe(() => { document.documentElement.dataset.wood = state.settings.wood; });
 
+// ---------- live activity ----------
+const VIEW_DOING = { kitchen: 'looking around the kitchen', stock: 'checking what we have', recipes: 'browsing recipes', plan: 'planning meals', list: 'on the shopping list', settings: 'in settings' };
+const WHY_DOING = { 'list-add': 'adding to the shopping list', 'list-check': 'shopping', 'list-stock': 'putting groceries away', 'item-add': 'putting groceries away', 'item-save': 'editing the kitchen', 'item-qty': 'using things up', 'item-restock': 'restocking', 'item-date': 'labeling dates', 'event-save': 'planning meals', trip: 'planning a store run', cooked: 'cooking' };
+subscribe(why => { if (WHY_DOING[why]) setDoing(WHY_DOING[why]); });
+onLive(() => $$('[data-live]').forEach(el => { el.innerHTML = liveStripHTML(); }));
+// my actions → everyone else's screen; their actions → a toast here
+window.addEventListener('shelfstock:mine', e => { const txt = line(e.detail).replace(/<[^>]+>/g, ''); const nm = txt.split(' ')[0]; announce(txt.slice(nm.length + 1), e.detail.type === 'atstore' ? '🛒' : ''); });
+window.addEventListener('shelfstock:live-act', e => { const p = e.detail; toast(`${p.name} ${p.text}`, { icon: p.emoji || '🟢' }); });
+onHere(store => { if (store) toast(`You're at ${store.name} — your list is ready`, { icon: '🛒', action: 'Open list', onAction: () => go('list') }); });
+
+// ---------- who's signed in ----------
+function paintMe() { const b = $('[data-act=me]'); if (b) b.innerHTML = avatar(me(), 38); }
+subscribe(paintMe);
+
+function profileSheet() {
+  const m = me();
+  if (!m) return loginScreen().then(paintMe);
+  openSheet({
+    hero: `<div class="sheet-hero" style="background:${m.color}">${avatar(m, 88)}<h2>${esc(m.name)}</h2><div class="crumb">Signed in on this phone</div></div>`,
+    html: `
+      <button class="btn btn-brass btn-block" data-switch>👥 Switch person</button>
+      <div class="spacer"></div>
+      <div class="group-h">Your picture<span class="line"></span></div>
+      <div class="login-emojis" style="max-width:none;justify-content:flex-start">${AVATARS.map(a => `<button data-e="${a}" class="${a === m.emoji && !m.photo ? 'on' : ''}" style="background:var(--paper-2)">${a}</button>`).join('')}<label class="btn btn-ghost btn-sm" style="height:48px">📸 Photo<input type="file" accept="image/*" capture="user" data-photo hidden></label></div>
+      <div class="group-h">PIN<span class="line"></span></div>
+      <button class="btn btn-ghost btn-block" data-newpin>🔐 Change my PIN</button>
+      <p class="small muted">Forgot someone's PIN? Settings › People can reset it to 0000.</p>`,
+    onMount: (b, close) => {
+      b.querySelector('[data-switch]').onclick = async () => { close(); signOut(); paintMe(); await loginScreen(); paintMe(); reconnectLive(); go(current); };
+      b.querySelectorAll('[data-e]').forEach(x => x.onclick = () => { update(s => { const z = s.members.find(y => y.id === m.id); z.emoji = x.dataset.e; z.photo = ''; }, 'member'); haptic(); close(); profileSheet(); });
+      b.querySelector('[data-photo]').onchange = async e => { const f = e.target.files[0]; if (!f) return; const { thumb } = await photoFromFile(f, 200); update(s => { s.members.find(y => y.id === m.id).photo = thumb; }, 'member'); close(); profileSheet(); };
+      b.querySelector('[data-newpin]').onclick = async () => { close(); await resetPin(m.id); signOut(); toast('Enter 0000, then choose your new PIN', { icon: '🔐' }); await loginScreen(); paintMe(); };
+    },
+  });
+}
+
 // ---------- boot ----------
 (async () => {
   go('kitchen', {}, { animate: false });
   startSync();
+  startSeasons();
+  startStoreWatch();
+  if (!(state.members || []).length) { const ms = await seedMembers(); update(s => { s.members = ms; }, 'member'); }
+  paintMe();
   if (!state.settings.onboarded) {
     const sample = await welcome();
+    if (!me()) await loginScreen();
     go('kitchen');
     setTimeout(() => tour(), 450);
-  }
+  } else if (!me()) await loginScreen();
+  paintMe();
+  startLive();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) navigator.serviceWorker.register('sw.js').catch(() => { });
 })();

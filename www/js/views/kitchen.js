@@ -6,6 +6,7 @@ import { esc, attr, icon, $, $$, countUp, imgOrEmoji, haptic } from '../ui/dom.j
 import { showItem, labelWalk } from '../ui/itemSheet.js';
 import { actions } from '../router.js';
 import { holidaysFor } from '../data/holidays.js';
+import { activityHTML, tripBannerHTML, tripDetail, liveStripHTML } from '../ui/house.js';
 
 // ---------- the rooms (swipe pages) ----------
 // Boxes are [left, top, width, height] in % of the wall. Swiping right from the stove wall
@@ -53,6 +54,11 @@ const ROOMS = [
     D('countertop', 0, 52, 100, 4),
     Z('drawer-c', 2, 57, 30, 6.5, { type: 'drawer' }), Z('base-big', 2, 64.5, 30, 23.5),
     D('floor', 0, 88, 100, 12),
+    // Clyde's spot on the floor: water bowl, food bowl (his food), bone (his treats)
+    D('clyde-mat', 2, 90.5, 38, 8, '<span>CLYDE</span>'),
+    D('water-bowl', 4, 91.5, 10, 5.5, '<i></i>'),
+    Z('clyde', 15.5, 90.8, 11, 6.5, { type: 'bowl' }),
+    Z('clyde-treats', 28, 91, 10, 6, { type: 'bone' }),
     D('island-top', 40, 63, 58, 5), Z('island', 43, 68, 52, 21, { finish: 'espresso' }),
   ] },
 ];
@@ -94,6 +100,8 @@ function part(p) {
     case 'steel-drawer': doors = `<button class="door drawer steel" ${aria}><span class="handle h"></span><span class="label">${label}</span></button>`; break;
     case 'enamel-drawer': doors = `<button class="door drawer enamel" ${aria}><span class="label">${label}</span></button>`; break;
     case 'drawer': doors = `<button class="door drawer oak" ${aria}><span class="knob c"></span></button>`; break;
+    case 'bowl': return `<button class="pos pet-bowl" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="kibble"></span>${badge(id)}</button>`;
+    case 'bone': return `<button class="pos pet-bone" data-zone="${id}" style="${pct(p.box)}" ${aria}>🦴${badge(id)}</button>`;
     case 'counter': return `<button class="pos counter-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}>${itemsIn(id).slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('')}</button>`;
     default: doors = `<button class="door ${fin} ${right ? 'right' : ''}" ${aria}><span class="pull v" style="${right ? 'left' : 'right'}:7px;${p.box[1] < 40 ? 'bottom' : 'top'}:10px"></span><span class="label">${label}</span></button>`;
   }
@@ -122,6 +130,8 @@ export function render(root) {
   root.innerHTML = `
     <div class="hero-greet"><h2>${greeting()} 👋</h2><p>${items.length ? `${items.length} things in your kitchen · ${cookable} recipes you can make right now` : 'Your kitchen is empty — tap ＋ to stock it.'}</p></div>
 
+    ${tripBannerHTML()}
+    <div data-live>${liveStripHTML()}</div>
     <div class="room-tabs">${ROOMS.map((r, i) => `<button class="room-tab ${room === i ? 'on' : ''}" data-room="${i}" ${r.id === 'garage' ? 'data-tour="garage-tab"' : ''}>${r.label} <span class="n">${roomCount(r)}</span></button>`).join('')}</div>
     <div class="rooms" data-rooms data-tour="scene">
       ${ROOMS.map(r => `<div class="room"><div class="wall wall-${r.wall || 'paint'}">${r.parts.map(part).join('')}</div></div>`).join('')}
@@ -149,6 +159,8 @@ export function render(root) {
     ${todays.length || upcoming.length ? `<div class="section-title"><h2>On the menu</h2><button class="link" data-go="plan">Calendar</button></div>
     <div class="agenda stagger">${[...todays, ...upcoming].map(e => { const r = (e.recipeIds || []).map(recipeById).filter(Boolean); const miss = r.reduce((a, x) => a + recipeMatch(x).missing.length, 0); return `<button class="ev ${e.kind}" data-ev="${e.id}"><span class="em">${e.emoji || '🍽️'}</span><span class="grow"><span class="when">${e.date === today() ? 'Today' : fmtDate(e.date)}${e.slot ? ' · ' + esc(e.slot) : ''}</span><b>${esc(e.title)}</b><small class="muted">${r.length ? `${r.length} recipe${r.length > 1 ? 's' : ''} · ${miss ? `<span style="color:var(--tomato)">${miss} to buy</span>` : '<span style="color:var(--sage)">all set ✓</span>'}` : esc(e.notes || '')}${e.guests ? ` · 👥 ${e.guests}` : ''}</small></span>${icon('next')}</button>`; }).join('')}</div>` : ''}
 
+    ${(() => { const a = activityHTML(6); return a ? `<div class="section-title"><h2>Around the house</h2></div><div class="activity card pad">${a}</div>` : ''; })()}
+
     ${(() => { const s = suggestions().slice(0, 4); return s.length ? `<div class="section-title"><h2>You should get</h2><button class="link" data-go="list">Shopping list</button></div><div class="stagger">${s.map(x => `<div class="sugg" style="${tint(FOOD_BY_ID[x.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${x.emoji}</span><span class="t"><b>${esc(x.name)}</b><small>${x.icon} ${esc(x.reason)}</small></span><button class="btn btn-ghost btn-sm" data-sugg="${attr(JSON.stringify(x))}">${icon('plus')}</button></div>`).join('')}</div>` : ''; })()}
   `;
 
@@ -170,6 +182,7 @@ export function render(root) {
     }, { passive: true });
   }
   root.onclick = e => {
+    const tr = e.target.closest('[data-trip]'); if (tr) return tripDetail(tr.dataset.trip, () => actions.go('list'));
     const rt = e.target.closest('[data-room]');
     if (rt) { room = Number(rt.dataset.room); haptic(); return rooms.scrollTo({ left: room * rooms.clientWidth, behavior: 'smooth' }); }
     const z = e.target.closest('[data-zone]');

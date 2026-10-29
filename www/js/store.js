@@ -8,7 +8,10 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 5;
+const VERSION = 8;
+
+// Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
+export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
 
 export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 export const today = () => iso(new Date());
@@ -19,8 +22,8 @@ function blank() {
   return {
     v: VERSION,
     zones: structuredClone(DEFAULT_ZONES),
-    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [],
-    settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
+    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [],
+    settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', season: 'auto', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
   };
 }
 
@@ -39,6 +42,16 @@ const MIGRATIONS = {
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
     }
   },
+  // v7 → v8: profile pictures are pick-able icons instead of faces; saved local stores
+  8: s => {
+    const faces = ['🧔', '🧒', '👩', '👴', '👵', '👨', '👧', '🧑'], icons = ['🍳', '🎮', '🌻', '⚓', '🥕', '🧀', '🍕', '🌮'];
+    (s.members || []).forEach((m, i) => { if (faces.includes(m.emoji)) m.emoji = icons[i % icons.length]; });
+    s.stores ||= [];
+  },
+  // v6 → v7: Clyde's food bowl and treats
+  7: s => { for (const z of DEFAULT_ZONES.filter(z => z.kind === 'pet')) if (!s.zones.some(x => x.id === z.id)) s.zones.push(structuredClone(z)); },
+  // v5 → v6: household members (PIN login) and store trips
+  6: s => { s.members ||= []; s.trips ||= []; s.settings.season ||= 'auto'; },
   // v4 → v5: fridge & freezer modeled on the photos (door bins per door, cheese drawer, freezer tray)
   5: s => {
     for (const id of ['fridge', 'freezer']) {
@@ -166,7 +179,7 @@ export function makeItem(partial) {
 
 export function addItem(partial) {
   const it = makeItem(partial);
-  update(s => { s.items.push(it); s.history.push({ ts: Date.now(), type: 'added', name: it.name, foodId: it.foodId, qty: it.qty }); }, 'item-add');
+  update(s => { s.items.push(it); s.history.push({ ts: Date.now(), by: who(), type: 'added', name: it.name, foodId: it.foodId, qty: it.qty }); }, 'item-add');
   return it;
 }
 
@@ -178,7 +191,7 @@ export function saveItem(it) {
 export function removeItem(id, how = 'used') {
   update(s => {
     const it = s.items.find(x => x.id === id);
-    if (it) s.history.push({ ts: Date.now(), type: how, name: it.name, foodId: it.foodId, qty: it.qty, cat: it.cat });
+    if (it) s.history.push({ ts: Date.now(), by: who(), type: how, name: it.name, foodId: it.foodId, qty: it.qty, cat: it.cat, last: how === 'used' });
     s.items = s.items.filter(x => x.id !== id);
   }, 'item-remove');
 }
@@ -213,7 +226,7 @@ export function restockItem(id, { qty, expires = null, dateType = 'Best by' }) {
     batches.push(nb);
     it.batches = batches;
     syncBatches(it);
-    s.history.push({ ts: Date.now(), type: 'bought', name: it.name, foodId: it.foodId, qty: Number(qty) || 1, cat: it.cat });
+    s.history.push({ ts: Date.now(), by: who(), type: 'bought', name: it.name, foodId: it.foodId, qty: Number(qty) || 1, cat: it.cat });
   }, 'item-restock');
   return nb.id;
 }
@@ -253,7 +266,7 @@ export function adjustQty(id, delta) {
       syncBatches(it);
       if (had && !it.batches && it.qty === 0) it.qty = 0;
     } else it.qty = Math.max(0, r2(Number(it.qty) + delta));
-    if (delta < 0) s.history.push({ ts: Date.now(), type: 'used', name: it.name, foodId: it.foodId, qty: -delta, cat: it.cat });
+    if (delta < 0) s.history.push({ ts: Date.now(), by: who(), type: 'used', name: it.name, foodId: it.foodId, qty: -delta, cat: it.cat, last: Number(it.qty) === 0 });
   }, 'item-qty');
 }
 
@@ -311,7 +324,8 @@ export function addToList(entry) {
       return;
     }
     added = true;
-    s.shopping.push({
+    s.history.push({ ts: Date.now(), by: who(), type: 'requested', name, foodId: food?.id || null, cat: food?.cat || entry.cat });
+    s.shopping.push({ by: who(),
       id: uid(), name, foodId: food?.id || null, cat: food?.cat || entry.cat || 'pantry',
       emoji: food?.emoji || entry.emoji || '🛒', qty: entry.qty || 1, unit: entry.unit || food?.unit || 'ea',
       done: false, reasons: entry.reason ? [entry.reason] : [], added: today(), note: entry.note || '',
@@ -338,7 +352,7 @@ export function checkOffToStock(id) {
     update(s => {
       s.items.push(it);
       s.shopping = s.shopping.filter(y => y.id !== id);
-      s.history.push({ ts: Date.now(), type: 'bought', name: it.name, foodId: it.foodId, qty: e.qty, cat: it.cat });
+      s.history.push({ ts: Date.now(), by: who(), type: 'bought', name: it.name, foodId: it.foodId, qty: e.qty, cat: it.cat });
     }, 'list-stock');
   }
   return { item: it, batchId: null };
@@ -366,6 +380,12 @@ export function suggestions() {
         push(key, { name: m.food?.name || m.ing.name, foodId: m.food?.id, emoji: m.food?.emoji || '🛒', unit: m.ing.unit, qty: m.short || m.need, reason: `${r.title} · ${fmtDate(ev.date)}`, icon: '📅' });
       }
     }
+  }
+  // About to perish or down to the last one: replace it while you're out
+  for (const it of state.items) {
+    const key = it.foodId || it.name.toLowerCase(), st = itemStatus(it);
+    if (['today', 'soon'].includes(st.key) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: st.days === 0 ? 'Goes bad today — use it or replace it' : `Goes bad in ${st.days}d — use it or replace it`, icon: '⏰', kind: 'perish' });
+    else if (Number(it.qty) === 1 && ['ea', 'dozen', 'gal', 'loaf', 'jar', 'bottle', 'carton', 'bag', 'box', 'can', 'pack'].includes(it.unit) && FOOD_BY_ID[it.foodId] && !['kitchenware', 'household', 'spices'].includes(it.cat) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Only 1 left', icon: '🪫', kind: 'few' });
   }
   // Things you buy often but don't have
   const freq = {};
@@ -398,6 +418,16 @@ export const fmtQty = q => {
 export const catOf = id => CAT_BY_ID[id] || { name: 'Other', emoji: '📦', color: '#888' };
 // Inline style giving an element its category color (used to tint emoji backgrounds).
 export const tint = cat => `--tint:${catOf(cat).color}`;
+
+// ---------- store trips ----------
+// "Poppy is going to the store Thursday — get your list in before noon."
+export function addTrip({ date, cutoff, store, note }) {
+  const t = { id: uid(), by: who(), date, cutoff, store: store || '', note: note || '', done: false, created: Date.now() };
+  update(s => { (s.trips ||= []).push(t); s.history.push({ ts: Date.now(), by: who(), type: 'trip', tripId: t.id, name: store || 'the store', date }); }, 'trip');
+  return t;
+}
+export const finishTrip = id => update(s => { const t = (s.trips || []).find(x => x.id === id); if (t) t.done = true; }, 'trip');
+export const activeTrips = () => (state.trips || []).filter(t => !t.done && t.date >= today()).sort((a, b) => a.date < b.date ? -1 : 1);
 
 // ---------- events ----------
 
@@ -442,6 +472,8 @@ export function seedSample() {
     add('ice-cream', 2, { name: 'Hood Creamy Coffee Ice Cream', sectionId: 'fz-bin' }), add('french-fries', 1, { name: 'Crinkle Cut Fries', sectionId: 'fz-bin' }),
     add('frozen-waffles', 1, { name: 'Frozen Pancakes', emoji: '🥞', sectionId: 'fz-bin' }), add('frozen-peas', 1, { sectionId: 'fz-bin' }), add('frozen-pizza', 2, { sectionId: 'fz-bin' }),
     add('whole-turkey', 14, { sectionId: 'gu-bin', tags: ['thanksgiving'] }),
+    add('dog-food', 1, { minQty: 1, notes: "Clyde's kibble", sectionId: 'cl-bag' }), add('dog-food', 1, { name: 'Kibble (in bowl)', unit: 'bowl', sectionId: 'cl-bowl', noExpiry: true, expires: null }),
+    add('dog-treats', 1, { minQty: 1, sectionId: 'cl-treats' }), add('dog-bones', 3, { unit: 'ea', sectionId: 'cl-treats' }),
     add('steak', 3, { sectionId: 'gu-2', expires: addDays(T, 200) }), add('frozen-berries', 2, { sectionId: 'gu-3' }), add('shrimp', 2, { sectionId: 'gu-2' }),
     add('ice', 2, { sectionId: 'gz-main' }), add('frozen-waffles', 1, { sectionId: 'gz-door' }),
     add('beer', 2, { sectionId: 'gf-door' }), add('sparkling-water', 2, { sectionId: 'gf-door' }), add('eggnog', 1, { sectionId: 'gf-top', tags: ['christmas'] }),
@@ -474,6 +506,25 @@ export function seedSample() {
     s.items = items; s.events = events; s.shopping = shopping;
     s.history = ['milk', 'eggs', 'bread', 'bananas', 'coffee', 'milk', 'eggs', 'bananas', 'butter', 'butter'].map((foodId, i) => ({ ts: Date.now() - i * 864e5 * 3, type: 'bought', foodId, name: FOOD_BY_ID[foodId].name, qty: 1 }));
     s.favorites = ['b-beef-tacos', 'b-chocolate-chip-cookies'];
+    // a lived-in household: who asked for what, and Poppy's store run Thursday
+    const [andrew, zayne, gemmie, poppy] = (s.members || []).map(m => m.id);
+    if (poppy) {
+      const now = Date.now(), H = 36e5;
+      const thu = (() => { const d = new Date(); d.setDate(d.getDate() + ((4 - d.getDay() + 7) % 7 || 7)); return iso(d); })();
+      const cut = new Date(); if (cut.getHours() >= 12) cut.setDate(cut.getDate() + 1); cut.setHours(12, 0, 0, 0);
+      const trip = { id: uid(), by: poppy, date: thu, cutoff: cut.toISOString(), store: 'Hannaford', note: '', done: false, created: now - 3 * H };
+      s.trips = [trip];
+      const req = (by, foodId, reason, hoursAgo) => {
+        const f = FOOD_BY_ID[foodId];
+        s.shopping.push({ id: uid(), by, name: f.name, foodId, cat: f.cat, emoji: f.emoji, qty: 1, unit: f.unit, done: false, reasons: reason ? [reason] : [], added: T, note: '' });
+        s.history.push({ ts: now - hoursAgo * H, by, type: 'requested', name: f.name, foodId, cat: f.cat });
+      };
+      req(andrew, 'coffee', 'Running low', 5); req(zayne, 'dog-treats', 'For Clyde', 2); req(gemmie, 'strawberries', '', 1);
+      s.history.push({ ts: now - 26 * H, by: gemmie, type: 'used', last: true, name: 'Sage', foodId: 'sage', cat: 'spices' });
+      s.history.push({ ts: now - 3 * H, by: poppy, type: 'trip', tripId: trip.id, name: 'Hannaford', date: thu });
+      s.history.push({ ts: now - 30 * H, by: andrew, type: 'cooked', name: 'Spaghetti Bolognese', recipeId: 'b-spaghetti-bolognese' });
+      s.history.sort((a, b) => a.ts - b.ts);
+    }
   }, 'seed');
 }
 

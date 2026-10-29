@@ -15,6 +15,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.view.WindowInsets;
 import android.webkit.JavascriptInterface;
+import android.webkit.GeolocationPermissions;
 import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -41,11 +42,13 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends Activity {
     private static final String ORIGIN = "https://appassets.androidplatform.net";
     private static final String BG = "#2A180D";
-    private static final int REQ_FILE = 1, REQ_CAM = 2;
+    private static final int REQ_FILE = 1, REQ_CAM = 2, REQ_LOC = 3;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCb;
     private PermissionRequest pendingPerm;
+    private GeolocationPermissions.Callback geoCb;
+    private String geoOrigin;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -71,6 +74,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        s.setGeolocationEnabled(true);
         s.setAllowFileAccess(false);
         web.addJavascriptInterface(new Bridge(), "LarderNative");
 
@@ -99,6 +103,17 @@ public class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            // "Find stores near me" and "tell the house when I'm at a store"
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback cb) {
+                if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    cb.invoke(origin, true, false);
+                } else {
+                    geoCb = cb; geoOrigin = origin;
+                    requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
+                }
+            }
+
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> {
@@ -212,6 +227,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] grants) {
+        if (req == REQ_LOC && geoCb != null) {
+            boolean ok = false;
+            for (int g : grants) if (g == PackageManager.PERMISSION_GRANTED) ok = true;
+            geoCb.invoke(geoOrigin, ok, false);
+            geoCb = null;
+            return;
+        }
         if (req == REQ_CAM && pendingPerm != null) {
             if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) pendingPerm.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
             else pendingPerm.deny();

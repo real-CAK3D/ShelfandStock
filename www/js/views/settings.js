@@ -3,9 +3,13 @@
 import { state, update, replaceState, resetAll, seedSample, uid } from '../store.js';
 import { ZONE_KINDS } from '../data/layout.js';
 import { FOOD_BY_ID, searchFoods } from '../data/foods.js';
-import { esc, attr, icon, $, $$, toast, haptic, confirmBox } from '../ui/dom.js';
+import { esc, attr, icon, $, $$, toast, haptic, confirmBox, openSheet } from '../ui/dom.js';
 import { actions } from '../router.js';
 import { syncInfo, createHousehold, joinHousehold, leaveHousehold, pull, push } from '../services/sync.js';
+import { me, memberById, avatar, addMember, resetPin } from '../services/people.js';
+import { SEASONS } from '../ui/seasons.js';
+import { getPosition, findNearby, saveStore, removeStore, storeEmoji, miles, sharing, setSharing } from '../services/stores.js';
+import { loader } from '../ui/loader.js';
 
 const WOODS = [['walnut', '#3b2416', '#8a5a35'], ['oak', '#6b4a2b', '#b7884f'], ['cherry', '#5a2318', '#a4553a'], ['ash', '#4a4640', '#a89f90'], ['ebony', '#1d1612', '#4a3a2e']];
 
@@ -52,6 +56,27 @@ export function render(root) {
       ${wasted.length ? `<p class="small muted">Most tossed: ${esc(Object.entries(wasted.reduce((a, h) => (a[h.name] = (a[h.name] || 0) + 1, a), {})).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, c]) => `${n} (${c})`).join(', '))}</p>` : ''}
     </div>
 
+    <div class="card pad" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px"><h3>👥 People</h3><button class="btn btn-ghost btn-sm" data-person-add>${icon('plus')} Add</button></div>
+      ${(state.members || []).map(m => `<div class="setting">${avatar(m, 40)}<div class="grow"><b>${esc(m.name)}${m.id === me()?.id ? ' <span class="pill ok">you</span>' : ''}</b><small>${m.mustReset ? 'Hasn’t set a PIN yet (0000)' : 'PIN set'}</small></div><button class="btn btn-ghost btn-sm" data-pin-reset="${m.id}">Reset PIN</button>${m.id !== me()?.id ? `<button class="btn btn-ghost btn-sm" data-person-del="${m.id}" aria-label="Remove ${attr(m.name)}">${icon('trash')}</button>` : ''}</div>`).join('')}
+      <p class="small muted" style="margin:8px 0 0">Reset sets a PIN back to 0000; they choose a new one next time they sign in.</p>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="margin-bottom:4px">🎉 Holiday themes</h3>
+      <p class="small muted" style="margin:0 0 10px">A little seasonal pizazz: colors, drifting decorations and a garland on top. Auto follows the calendar.</p>
+      <div class="row wrap" style="gap:6px">${[['auto', '✨ Auto'], ['off', 'Off'], ...Object.entries(SEASONS).map(([k, v]) => [k, `${v.emoji} ${v.name}`])].map(([k, l]) => `<button class="chip ${(s.season || 'auto') === k ? 'on' : ''}" data-season="${k}">${l}</button>`).join('')}</div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px" data-tour="stores">
+      <h3 style="margin-bottom:4px">🛒 Our stores</h3>
+      <p class="small muted" style="margin:0 0 10px">Save the stores you use. When someone is at one, the house sees “Poppy is at Hannaford” and their list pops up.</p>
+      ${(state.stores || []).map(st => `<div class="setting"><span style="font-size:24px">${st.emoji}</span><div class="grow"><b>${esc(st.name)}</b><small>${esc(st.address || '')}</small></div><button class="btn btn-ghost btn-sm" data-store-del="${st.id}" aria-label="Remove ${attr(st.name)}">${icon('trash')}</button></div>`).join('') || '<p class="muted small">No stores saved yet.</p>'}
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn btn-brass grow" data-store-find>📍 Find stores near me</button><button class="btn btn-ghost" data-store-here>I'm at one</button></div>
+      <div data-store-results></div>
+      <div class="setting" style="border:0;padding-bottom:0"><div class="grow"><b>Tell the house when I'm at a store</b><small>Checks while the app is open on this phone</small></div><label class="toggle"><input type="checkbox" data-locshare ${sharing() ? 'checked' : ''}><i></i></label></div>
+    </div>
+
     <div class="card pad" style="margin-bottom:14px" data-tour="sync">
       <h3>☁️ Household sync</h3>
       ${(() => { const si = syncInfo(); return si.code ? `
@@ -76,11 +101,39 @@ export function render(root) {
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow btn-sm" data-sample>Load sample kitchen</button><button class="btn btn-danger grow btn-sm" data-wipe>Erase everything</button></div>
     </div>
 
-    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.1 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
+    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.2 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
   </div>`;
 
   root.onclick = async e => {
     const w = e.target.closest('.swatch[data-wood]'); // <html> also carries data-wood if (w) { update(s => { s.settings.wood = w.dataset.wood; }, 'wood'); document.documentElement.dataset.wood = w.dataset.wood; haptic(); return; }
+    const sdel = e.target.closest('[data-store-del]'); if (sdel) { removeStore(sdel.dataset.storeDel); return; }
+    if (e.target.closest('[data-store-find]')) {
+      const box = $('[data-store-results]', root);
+      box.innerHTML = loader('Finding where you are…', ['📍', '🛒', '🏪']);
+      const status = t => { const x = box.querySelector('.loader-text'); if (x) x.textContent = t; };
+      try {
+        const pos = await getPosition();
+        const found = await findNearby(pos, status);
+        box.innerHTML = found.length ? `<div class="group-h">Near you<span class="line"></span></div>${found.slice(0, 25).map((f, i) => `<div class="setting"><span style="font-size:22px">${storeEmoji(f.name)}</span><div class="grow"><b>${esc(f.name)}</b><small>${miles(f.dist)} · ${esc(f.address)}</small></div><button class="btn btn-ghost btn-sm" data-store-add="${i}">${icon('plus')}</button></div>`).join('')}` : '<p class="muted small">No stores found nearby.</p>';
+        box.querySelectorAll('[data-store-add]').forEach(b => b.onclick = ev => { ev.stopPropagation(); const f = found[Number(b.dataset.storeAdd)]; toast(saveStore(f) ? `${f.name} saved` : 'Already saved', { icon: '🛒' }); });
+      } catch (err) { box.innerHTML = `<p class="muted small">⚠️ ${esc(err.message)}</p>`; }
+      return;
+    }
+    if (e.target.closest('[data-store-here]')) {
+      openSheet({ title: 'Save the store you’re at', html: `<label class="field"><span>Store name</span><input class="input" data-sname placeholder="e.g. Hannaford"></label><button class="btn btn-brass btn-block" data-sok>📍 Save with my location</button>`,
+        onMount: (b, close) => { b.querySelector('[data-sok]').onclick = async () => { const name = b.querySelector('[data-sname]').value.trim(); if (!name) return; try { const pos = await getPosition(); saveStore({ name, lat: pos.lat, lon: pos.lon }); close(); toast(`${name} saved`, { icon: '🛒' }); } catch (err) { toast(err.message, { icon: '⚠️' }); } }; } });
+      return;
+    }
+    const sz = e.target.closest('[data-season]'); if (sz) { haptic(); return update(st => { st.settings.season = sz.dataset.season; }); }
+    if (e.target.closest('[data-person-add]')) {
+      openSheet({ title: 'Add someone', html: `<label class="field"><span>Name</span><input class="input" data-pname maxlength="20"></label><p class="small muted" style="margin-top:-6px">Their first PIN is 0000; they pick their own when they first sign in.</p><button class="btn btn-brass btn-block" data-padd>Add</button>`,
+        onMount: (b, close) => { setTimeout(() => b.querySelector('[data-pname]').focus(), 200); b.querySelector('[data-padd]').onclick = async () => { const name = b.querySelector('[data-pname]').value.trim(); if (!name) return; await addMember(name); close(); toast(`${name} added — first PIN is 0000`, { icon: '👋' }); }; } });
+      return;
+    }
+    const pr = e.target.closest('[data-pin-reset]');
+    if (pr) { const m = memberById(pr.dataset.pinReset); if (await confirmBox(`Reset ${m.name}'s PIN to 0000?`, { ok: 'Reset' })) { await resetPin(m.id); toast(`${m.name} can sign in with 0000 now`, { icon: '🔐' }); } return; }
+    const pd = e.target.closest('[data-person-del]');
+    if (pd) { const m = memberById(pd.dataset.personDel); if (await confirmBox(`Remove ${m.name}? Their past activity stays.`, { ok: 'Remove', danger: true })) update(st => { st.members = st.members.filter(x => x.id !== m.id); }, 'member'); return; }
     if (e.target.closest('[data-sync-create]')) {
       try { const code = await createHousehold($('[data-sync-name]', root).value); toast(`Household started · ${code}`, { icon: '☁️' }); } catch (err) { toast('Couldn’t reach the cloud — check your connection', { icon: '⚠️' }); }
       return render(root);
@@ -129,6 +182,7 @@ export function render(root) {
     if (t.dataset.zkind) update(s => { s.zones.find(z => z.id === t.dataset.zkind).kind = t.value; }, 'zone');
     if (t.dataset.sname) { const [zid, sid] = t.dataset.sname.split('|'); update(s => { s.zones.find(z => z.id === zid).sections.find(x => x.id === sid).name = t.value.trim() || 'Shelf'; }, 'zone'); }
     if (t.dataset.hap !== undefined) update(s => { s.settings.haptics = t.checked; });
+    if (t.dataset.locshare !== undefined) { setSharing(t.checked); toast(t.checked ? 'The house will see when you’re at a saved store' : 'Store sharing off', { icon: '📍' }); }
     if (t.dataset.staple !== undefined) { const f = searchFoods(t.value, 1)[0]; if (f) update(s => { if (!s.settings.stapleIds.includes(f.id)) s.settings.stapleIds.push(f.id); }); t.value = ''; }
     if (t.dataset.import !== undefined && t.files[0]) importData(t.files[0]);
   };

@@ -8,8 +8,8 @@ import { state, update, subscribe } from '../store.js';
 const URL = 'https://rmshsswlodfvdffnlqdy.supabase.co/rest/v1/rpc/';
 const KEY = 'sb_publishable__aWybeZVozOcTHsjHq9jGg_HrQXqSpU'; // publishable (client-safe) key
 const LOCAL = 'shelfstock.sync';
-const SHARED = ['zones', 'items', 'shopping', 'events', 'recipes', 'favorites', 'history'];
-const MERGE = ['items', 'shopping', 'events', 'recipes'];
+const SHARED = ['zones', 'items', 'shopping', 'events', 'recipes', 'favorites', 'history', 'members', 'trips', 'stores'];
+const MERGE = ['items', 'shopping', 'events', 'recipes', 'members', 'trips', 'stores'];
 
 let info = load();
 const listeners = new Set();
@@ -77,7 +77,7 @@ export async function push() {
       applyRemote(remote);
       res = await rpc('shelfstock_push', { p_code: info.code, p_state: payload(), p_base: res.version });
     }
-    if (res.ok) { info.version = res.version; info.baseIds = idsOf(state); info.last = Date.now(); info.status = 'ok'; }
+    if (res.ok) { info.version = res.version; info.baseIds = idsOf(state); info.last = Date.now(); info.status = 'ok'; window.dispatchEvent(new Event('shelfstock:pushed')); }
   } catch { info.status = 'offline'; }
   pushing = false; save();
   if (again) { again = false; push(); }

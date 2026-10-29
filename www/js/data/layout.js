@@ -11,6 +11,7 @@ export const ZONE_KINDS = {
   pantry: { label: 'Pantry', emoji: '🚪' },
   counter: { label: 'Counter', emoji: '🍌' },
   holiday: { label: 'Holiday storage', emoji: '🎁' },
+  pet: { label: 'Pet', emoji: '🐾' },
   other: { label: 'Other', emoji: '📦' },
 };
 
@@ -60,6 +61,13 @@ export const DEFAULT_ZONES = [
   { id: 'drawer-c', name: 'Corner Drawer', short: '', kind: 'drawer', slot: 'drawer-c', sections: shelves('drc', ['Junk Drawer']) },
   { id: 'base-big', name: 'Big Base Cabinet', short: 'Base', kind: 'cabinet', slot: 'base-big', sections: shelves('bb', ['Shelf', 'Floor']) },
   { id: 'island', name: 'Island Cabinet', short: 'Island', kind: 'cabinet', slot: 'island', sections: shelves('isl', ['Shelf', 'Floor · Big Pots & Appliances']) },
+  // ---- Clyde (the dog): food bowl + his food, and a bone for his treats ----
+  { id: 'clyde', name: "Clyde's Food", short: 'Food', kind: 'pet', slot: 'clyde', sections: [
+    { id: 'cl-bowl', name: 'Food Bowl' }, { id: 'cl-bag', name: 'Dog Food Bag' },
+  ] },
+  { id: 'clyde-treats', name: "Clyde's Treats", short: 'Treats', kind: 'pet', slot: 'clyde-treats', sections: [
+    { id: 'cl-treats', name: 'Treats & Bones' },
+  ] },
   // ---- garage ----
   { id: 'g-fridge-fz', name: 'Garage Fridge Freezer', kind: 'freezer', slot: 'garage-fridge-fz', sections: [
     { id: 'gz-main', name: 'Freezer Shelf' }, { id: 'gz-door', name: 'Freezer Door' },
@@ -97,6 +105,7 @@ export function suggestSection(food, zones) {
   const pick = (...ids) => ids.find(has) || zones[0]?.sections[0]?.id;
   if (!food) return pick('fr-mid');
   const { cat, zone, id } = food;
+  if (cat === 'pet') return /treat|bone|chew/.test(id) ? pick('cl-treats') : pick('cl-bag');
   if (zone === 'holiday') {
     if (/napkin|candle|punch/.test(id)) return pick('ho-party');
     if (/cookie|cake/.test(id)) return pick('ho-xmas');

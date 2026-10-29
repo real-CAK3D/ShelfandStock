@@ -1,11 +1,13 @@
 // Shopping list: tick things off in the store, then "put away" to move them into the kitchen
 // and read their real dates off the packages.
 
-import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint } from '../store.js';
+import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips } from '../store.js';
 import { CATEGORIES, searchFoods, FOOD_BY_ID } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confetti, flyTo, openSheet, confirmBox } from '../ui/dom.js';
 import { labelWalk, dateSheet } from '../ui/itemSheet.js';
 import { actions } from '../router.js';
+import { tripBannerHTML, tripSheet, tripDetail, liveStripHTML } from '../ui/house.js';
+import { me, memberById, firstName, avatar } from '../services/people.js';
 
 const ORDER = CATEGORIES.map(c => c.id);
 
@@ -16,9 +18,16 @@ export function render(root) {
   for (const e of open) (groups[e.cat] ||= []).push(e);
   const sugg = suggestions();
 
+  const mineTrip = activeTrips().find(t => t.by === me()?.id);
+  const perish = sugg.filter(x => x.kind === 'perish' || x.kind === 'few'), restock = sugg.filter(x => !x.kind);
+  const suggRow = s => `<div class="sugg" style="${tint(FOOD_BY_ID[s.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${s.emoji}</span><span class="t"><b>${esc(s.name)}</b><small>${s.icon} ${esc(s.reason)}</small></span><button class="btn btn-ghost btn-sm" data-sugg="${sugg.indexOf(s)}">${icon('plus')}</button></div>`;
   root.innerHTML = `
+    ${tripBannerHTML()}
+    <div data-live>${liveStripHTML()}</div>
+    ${mineTrip ? '' : `<div style="margin:12px 12px 0"><button class="btn btn-wood wood-mid btn-block" data-trip-new>🚗 I'm going to the store</button></div>`}
     <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new list="food-dl"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
     <datalist id="food-dl"></datalist>
+    ${sugg.length ? `<div class="chips" style="margin-top:8px">${sugg.slice(0, 8).map(x => `<button class="chip" data-sugg="${sugg.indexOf(x)}" title="${attr(x.reason)}">${x.emoji} ${esc(x.name)} <span class="n">${x.icon}</span></button>`).join('')}</div>` : ''}
     ${done.length ? `<div style="margin:12px 12px 0"><button class="btn btn-sage btn-block" data-putaway>📦 Put away ${done.length} item${done.length > 1 ? 's' : ''} &amp; date them</button></div>` : ''}
     <div class="notepad-top wood-dark" style="margin-top:14px"></div>
     <div class="notepad" style="margin-top:0">
@@ -26,13 +35,14 @@ export function render(root) {
         <div class="group-h" style="margin:4px 16px 2px 56px">${catOf(c).emoji} ${esc(catOf(c).name)} <span class="n">${groups[c].length}</span></div>
         ${groups[c].map(e => `<div class="lrow ${e.done ? 'done' : ''}" data-id="${e.id}">
           <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
-          <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}</b>${e.reasons?.length ? `<small>${esc(e.reasons.join(' · '))}</small>` : ''}</span>
+          <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}</b>${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}</span>
           <span class="lq">${fmtQty(e.qty)} ${esc(e.unit)}</span>
           <button class="icon-btn" style="width:32px;height:32px;color:var(--ink-3);background:none;border:0" data-del="${e.id}" aria-label="Remove">${icon('close')}</button>
         </div>`).join('')}`).join('') : `<div class="empty"><span class="big">📝</span>Your list is empty.<br><span class="small">Add things above, or grab suggestions below.</span></div>`}
     </div>
     ${open.length ? `<div class="row" style="margin:0 12px;gap:8px"><button class="btn btn-ghost grow btn-sm" data-share>${icon('share')} Share list</button><button class="btn btn-ghost grow btn-sm" data-clear>${icon('trash')} Clear all</button></div>` : ''}
-    ${sugg.length ? `<div class="section-title"><h2>You should get</h2><button class="link" data-addall>Add all</button></div><div class="stagger">${sugg.map((s, i) => `<div class="sugg" style="${tint(FOOD_BY_ID[s.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${s.emoji}</span><span class="t"><b>${esc(s.name)}</b><small>${s.icon} ${esc(s.reason)}</small></span><button class="btn btn-ghost btn-sm" data-sugg="${i}">${icon('plus')}</button></div>`).join('')}</div>` : ''}
+    ${perish.length ? `<div class="section-title"><h2>Pick up while you're out</h2></div><p class="small muted" style="margin:-6px 16px 8px">Going bad soon or down to the last one.</p><div class="stagger">${perish.map(suggRow).join('')}</div>` : ''}
+    ${restock.length ? `<div class="section-title"><h2>You should get</h2><button class="link" data-addall>Add all</button></div><div class="stagger">${restock.map(suggRow).join('')}</div>` : ''}
   `;
 
   const inp = $('[data-new]', root);
@@ -58,9 +68,11 @@ export function render(root) {
     const del = e.target.closest('[data-del]');
     if (del) { const row = del.closest('.lrow'); row.classList.add('leaving'); setTimeout(() => update(s => { s.shopping = s.shopping.filter(x => x.id !== del.dataset.del); }, 'list-del'), 300); return; }
     if (e.target.closest('[data-putaway]')) return putAway();
+    if (e.target.closest('[data-trip-new]')) return tripSheet();
+    const tr = e.target.closest('[data-trip]'); if (tr) return tripDetail(tr.dataset.trip, () => { if (state.shopping.some(x => x.done)) putAway(); else toast('Tick off what you bought, then tap Put away', { icon: '🛒' }); });
     const sg = e.target.closest('[data-sugg]');
-    if (sg) { const s = sugg[Number(sg.dataset.sugg)]; addToList({ ...s, reason: s.reason }); haptic(); sg.closest('.sugg').animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 250 }); return; }
-    if (e.target.closest('[data-addall]')) { sugg.forEach(s => addToList({ ...s })); haptic(20); toast(`${sugg.length} added`, { icon: '🛒' }); return; }
+    if (sg) { const s = sugg[Number(sg.dataset.sugg)]; addToList({ ...s, reason: s.reason }); haptic(); (sg.closest('.sugg') || sg).animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 250 }); return; }
+    if (e.target.closest('[data-addall]')) { restock.forEach(s => addToList({ ...s })); haptic(20); toast(`${restock.length} added`, { icon: '🛒' }); return; }
     if (e.target.closest('[data-share]')) return shareList();
     if (e.target.closest('[data-clear]')) { if (await confirmBox('Clear the whole shopping list?', { ok: 'Clear', danger: true })) update(s => { s.shopping = []; }, 'list-clear'); }
   };

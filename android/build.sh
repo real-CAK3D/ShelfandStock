@@ -11,5 +11,5 @@ export JAVA_HOME="G:/Android/jdk/jdk-21.0.12.1+1"
 export GRADLE_USER_HOME="G:/.gradle"
 ./gradlew --no-daemon -q assembleDebug
 mkdir -p ../dist
-cp app/build/outputs/apk/debug/app-debug.apk ../dist/ShelfAndStock-1.1.0.apk
+cp app/build/outputs/apk/debug/app-debug.apk ../dist/ShelfAndStock-1.2.0.apk
 ls -l ../dist

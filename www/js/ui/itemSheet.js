@@ -5,6 +5,8 @@ import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '..
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
 import { lookupBarcode, searchProducts } from '../services/off.js';
+import { identify, photoFromFile } from '../services/vision.js';
+import { loader } from './loader.js';
 import { actions } from '../router.js';
 
 export const crumb = it => { const s = sectionById(it.sectionId); return s ? `${s.zone.name} › ${s.name}` : 'Unsorted'; };
@@ -245,6 +247,7 @@ export function editItem(it, { isNew = false } = {}) {
           <label class="field" style="width:76px"><span>Icon</span><input class="input" name="emoji" value="${attr(it.emoji)}" style="text-align:center;font-size:24px" maxlength="4"></label>
           <label class="field grow"><span>Name</span><input class="input" name="name" value="${attr(it.name)}" required></label>
         </div>
+        <div class="row" style="gap:8px;margin:-4px 0 12px"><span class="photo-prev">${it.image ? `<img src="${attr(it.image)}" alt="">` : ''}</span><label class="btn btn-ghost btn-sm">📸 <span data-photolbl>${it.image ? 'Change photo' : 'Add photo'}</span><input type="file" accept="image/*" capture="environment" data-photo hidden></label>${it.image ? '<button type="button" class="btn btn-ghost btn-sm" data-nophoto>Remove</button>' : ''}</div>
         ${it.off ? `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">🏷️ <span>Label found: <b>${esc(it.brand || '')} ${esc(it.off.name)}</b>${it.off.quantity ? ' · ' + esc(it.off.quantity) : ''}</span></div>` : ''}
         <div class="row" style="gap:10px">
           <label class="field"><span>Quantity</span><div class="stepper"><button type="button" data-d="-1">−</button><input name="qty" inputmode="decimal" value="${attr(it.qty)}"><button type="button" data-d="1">+</button></div></label>
@@ -272,6 +275,9 @@ export function editItem(it, { isNew = false } = {}) {
     onMount: (b, close) => {
       const f = b.querySelector('form');
       const qty = f.qty;
+      let photo = it.image || '';
+      b.querySelector('[data-photo]').onchange = async e => { const file = e.target.files[0]; if (!file) return; photo = (await photoFromFile(file)).thumb; b.querySelector('.photo-prev').innerHTML = `<img src="${photo}" alt="">`; b.querySelector('[data-photolbl]').textContent = 'Change photo'; haptic(); };
+      b.querySelector('[data-nophoto]')?.addEventListener('click', e => { photo = ''; b.querySelector('.photo-prev').innerHTML = ''; e.target.remove(); });
       f.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { qty.value = Math.max(0, Math.round((Number(qty.value || 0) + Number(btn.dataset.d) * stepFor(f.unit.value)) * 100) / 100); haptic(); });
       const hint = () => {
         const food = FOOD_BY_ID[it.foodId] || matchFood(f.name.value);
@@ -295,7 +301,7 @@ export function editItem(it, { isNew = false } = {}) {
           name: data.name.trim() || it.name, emoji: data.emoji.trim() || it.emoji,
           qty: Number(data.qty) || 0, minQty: data.minQty === '' ? null : Number(data.minQty),
           expires: data.expires || null, tags: data.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
-          openedOn: data.openedOn || null, opened: !!data.openedOn,
+          openedOn: data.openedOn || null, opened: !!data.openedOn, image: photo,
         };
         if (data.expires !== (it.expires || '') || data.dateType !== (it.dateType || 'Estimated')) next.dated = data.dateType !== 'Estimated';
         if (it.batches?.length) {
@@ -328,7 +334,7 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
   openSheet({
     title: 'Add groceries',
     html: `
-      <div class="seg" style="margin-bottom:14px"><button class="on" data-v="catalog">🔎 Search</button><button data-v="scan">📷 Scan</button><button data-v="label">🏷️ Labels</button><button data-v="custom">✏️ Custom</button></div>
+      <div class="seg seg-sm" style="margin-bottom:14px"><button class="on" data-v="catalog">🔎 Find</button><button data-v="snap">📸 Snap</button><button data-v="scan">▥ Scan</button><button data-v="label">🏷️ Labels</button><button data-v="custom">✏️</button></div>
       <div data-pane="catalog">
         <div class="search" style="margin:0 0 10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="input" placeholder="Milk, cumin, turkey baster…" value="${attr(query)}" data-q></div>
         <div data-results class="stagger"></div>
@@ -338,6 +344,11 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
           <div class="group-h">Browse by aisle<span class="line"></span></div>
           <div class="row wrap" style="gap:8px">${CATEGORIES.map(c => `<button class="chip" data-c="${c.id}">${c.emoji} ${esc(c.name)}</button>`).join('')}</div>
         </div>
+      </div>
+      <div data-pane="snap" class="hidden">
+        <p class="small muted" style="margin-top:0">Take a picture of the item. If there's a barcode we read the real label; otherwise a free on-phone AI figures out what it is. Then pick your photo or ours.</p>
+        <div class="row" style="gap:8px"><label class="btn btn-brass grow">📸 Take a picture<input type="file" accept="image/*" capture="environment" data-snap hidden></label><label class="btn btn-ghost">🖼️ Photo<input type="file" accept="image/*" data-snap hidden></label></div>
+        <div data-snapres></div>
       </div>
       <div data-pane="scan" class="hidden">
         <div class="scanner"><video playsinline muted></video><div class="reticle"></div><div class="laser"></div></div>
@@ -384,9 +395,45 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
       $('[data-lq]', b).onkeydown = e => { if (e.key === 'Enter') labelSearch(b, pick); };
       $('[data-lookup]', b).onclick = () => barcodeLookup($('[data-code]', b).value, b, pick);
       b._pick = pick;
+      b.querySelectorAll('[data-snap]').forEach(inp => inp.onchange = () => { if (inp.files[0]) snapFlow(inp.files[0], b, pick); inp.value = ''; });
     },
     onClose: stopScan,
   });
+}
+
+// Snap: photo → barcode label or AI guess → choose which picture to keep
+async function snapFlow(file, b, pick) {
+  const out = $('[data-snapres]', b);
+  out.innerHTML = loader('Looking at your photo…', ['📸', '🔍', '🥕']);
+  const status = t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; };
+  let r;
+  try { r = await identify(file, status); } catch (e) { out.innerHTML = '<div class="empty"><span class="big">🤔</span>Couldn’t read that photo.</div>'; return; }
+  const choosePic = (other, otherLabel) => `<div class="pic-choice"><label><input type="radio" name="pic" value="mine" checked><img src="${r.photo}" alt=""><span>My photo</span></label><label><input type="radio" name="pic" value="theirs">${other}<span>${otherLabel}</span></label></div>`;
+  const usePic = () => out.querySelector('input[name=pic]:checked')?.value === 'mine';
+  if (r.product) {
+    const p = r.product, food = p.foodId ? FOOD_BY_ID[p.foodId] : null;
+    out.innerHTML = `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">🏷️ <span>Barcode found: <b>${esc(p.brand || '')} ${esc(p.name)}</b></span></div>
+      ${choosePic(p.image ? `<img src="${attr(p.image)}" alt="">` : `<span class="pic-emoji">${food?.emoji || '🛒'}</span>`, 'Label photo')}
+      <button class="btn btn-brass btn-block" data-go>${icon('check')} Use this</button>`;
+    out.querySelector('[data-go]').onclick = () => pick(food, { name: p.name || food?.name, brand: p.brand, barcode: p.barcode, off: p, emoji: food?.emoji || '🛒', foodId: food?.id || null, image: usePic() ? r.photo : (p.image || '') });
+    return;
+  }
+  if (!r.candidates.length) {
+    out.innerHTML = `<div class="where-banner">🤔 <span>${r.offline ? 'The food spotter needs an internet connection the first time.' : `Not sure what that is${r.labels[0] ? ` (looks like “${esc(r.labels[0].label)}”)` : ''}.`} You can still save it with your photo.</span></div>
+      <img src="${r.photo}" alt="" style="width:120px;border-radius:14px;display:block;margin:8px auto">
+      <button class="btn btn-brass btn-block" data-custom-photo>${icon('edit')} Name it myself</button>`;
+    out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: '', emoji: '📦', image: r.photo });
+    return;
+  }
+  out.innerHTML = `<p style="margin:6px 0 8px;font-weight:600">Is it one of these?</p>
+    ${r.candidates.map((c, i) => `<button class="irow" style="width:100%;text-align:left;--tint:${catOf(c.food.cat).color}" data-cand="${i}"><span class="em">${c.food.emoji}</span><span class="t"><b>${esc(c.food.name)}</b><small>${Math.round(c.prob * 100)}% sure · saw “${esc(c.label)}”</small></span>${icon('next')}</button>`).join('')}
+    ${choosePic(`<span class="pic-emoji" data-their>${r.candidates[0].food.emoji}</span>`, 'App picture')}
+    <button class="btn btn-ghost btn-block btn-sm" data-custom-photo>None of these — name it myself</button>`;
+  out.querySelectorAll('[data-cand]').forEach(btn => {
+    btn.onmouseenter = () => { out.querySelector('[data-their]').textContent = r.candidates[Number(btn.dataset.cand)].food.emoji; };
+    btn.onclick = () => { const c = r.candidates[Number(btn.dataset.cand)]; pick(c.food, usePic() ? { image: r.photo } : {}); };
+  });
+  out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: r.labels[0]?.label || '', emoji: '📦', image: r.photo });
 }
 
 const bestLife = f => { const d = Math.max(f.life.pantry, f.life.fridge); const z = f.life.freezer; const s = x => span(x); return [d && s(d), z && s(z) + ' frozen'].filter(Boolean).join(' / '); };
@@ -400,7 +447,7 @@ async function labelSearch(b, pick) {
   const q = $('[data-lq]', b).value.trim();
   const out = $('[data-lres]', b);
   if (!q) return;
-  out.innerHTML = `<div class="empty"><span class="big">🔎</span>Reading labels…</div>`;
+  out.innerHTML = loader('Reading labels…', ['🏷️', '🥫', '🧃']);
   try {
     const hits = await searchProducts(q);
     b._labelHits = hits;

@@ -1,12 +1,13 @@
 // Recipes matched against what's actually in the kitchen.
 
-import { state, update, allRecipes, recipeById, recipeMatch, addToList, fmtQty, scaleQty, itemStatus, saveEvent, uid, today, removeItem, adjustQty, fmtDate } from '../store.js';
+import { state, update, allRecipes, recipeById, recipeMatch, addToList, fmtQty, scaleQty, itemStatus, saveEvent, uid, today, removeItem, adjustQty, fmtDate, who } from '../store.js';
 import { MEAL_TYPES } from '../data/recipes.js';
 import { matchFood } from '../data/foods.js';
 import { esc, attr, icon, $, $$, segmented, openSheet, toast, haptic, confetti, confirmBox, flyTo } from '../ui/dom.js';
 import { crumb } from '../ui/itemSheet.js';
 import { searchMeals, mealsWithIngredient, mealById, randomMeal } from '../services/mealdb.js';
 import { actions } from '../router.js';
+import { loader } from '../ui/loader.js';
 
 const ui = { tab: 'now', type: 'all', q: '' };
 let online = { results: [], q: '', loading: false, err: '' };
@@ -81,7 +82,7 @@ function draw(root) {
     const oq = $('[data-oq]', body);
     oq.onkeydown = e => { if (e.key === 'Enter' && oq.value.trim()) runOnline(root, oq.value.trim(), 'name'); };
     const out = $('[data-oresults]', body);
-    if (online.loading) out.innerHTML = `<div class="empty"><span class="big">🍳</span>Flipping through cookbooks…</div>`;
+    if (online.loading) out.innerHTML = loader('Flipping through cookbooks…', ['📖', '🍳', '🥘']);
     else if (online.err) out.innerHTML = `<div class="empty"><span class="big">📡</span>Can't reach the recipe library right now. Your built-in recipes still work offline.</div>`;
     else if (online.results.length) out.innerHTML = `<div class="section-title" style="margin-top:6px"><h2 style="font-size:17px">${esc(online.q)}</h2><span class="small muted">${online.results.length} found</span></div><div class="rgrid stagger">${online.results.map(r => card(r, r.partial ? null : recipeMatch(r))).join('')}</div>`;
     else if (online.q) out.innerHTML = `<div class="empty"><span class="big">🤷</span>Nothing for “${esc(online.q)}”. Try one word, like “curry”.</div>`;
@@ -188,7 +189,7 @@ function cookedFlow(r, m, servings) {
           else if (sel.value === 'some') adjustQty(it.id, -Math.min(Number(it.qty), Number(it.qty) * 0.25));
         }
         if ($('[data-left]', b).checked) actions.quickAdd({ name: `Leftover ${r.title}`, foodId: 'leftovers', emoji: r.emoji, qty: 1, unit: 'container', sectionId: 'fr-top' });
-        update(s => { s.history.push({ ts: Date.now(), type: 'cooked', name: r.title, recipeId: r.id }); }, 'cooked');
+        update(s => { s.history.push({ ts: Date.now(), by: who(), type: 'cooked', name: r.title, recipeId: r.id }); }, 'cooked');
         close(); confetti(innerWidth / 2, innerHeight / 2, 40); toast(`Cooked ${r.title}!`, { icon: '👩‍🍳' });
       };
     },

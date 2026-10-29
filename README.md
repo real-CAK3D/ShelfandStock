@@ -15,6 +15,11 @@
 - **Recipes** – 38 built-in plus TheMealDB online; ranked by what you have, quantity-aware ("need 1 lb more"), add only what's missing, scale servings, "I cooked this" takes it out of stock.
 - **Calendar** – meals, gatherings and holidays; guests scale recipes; prep tips like turkey thaw dates; tagged holiday items show where they're stored.
 - **Real product labels** – barcode scan → Open Food Facts label, Nutrition Facts panel, Nutri-Score, allergens.
+- **People & PINs** – Andrew, Zayne, Gemmie and Poppy sign in with their own 4-digit PIN (first time 0000); everything is signed ("Andrew requested coffee").
+- **Store runs & live activity** – "Poppy is going to Hannaford Thursday, list closes at noon", "Poppy is at Hannaford" via saved local stores, and a live panel of who is in the app doing what.
+- **Snap a photo** – barcode in the photo → real label; otherwise a free on-phone AI (TensorFlow.js MobileNet) identifies the food. Keep your photo or the app picture.
+- **Clyde** – water bowl, food bowl and a bone for his treats.
+- **Holiday themes** – automatic seasonal colors and decorations (or pick one / turn off).
 - **Household sync** – share one kitchen across phones with a household code (Supabase).
 - **Help mode** – tap **?** then anything on screen to learn what it does. Guided walkthrough on first launch.
 

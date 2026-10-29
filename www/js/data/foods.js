@@ -19,6 +19,7 @@ export const CATEGORIES = [
   { id: 'leftovers', name: 'Leftovers', emoji: '🍱', color: '#9c6b8e' },
   { id: 'kitchenware', name: 'Kitchenware & Holiday', emoji: '🦃', color: '#7a5a3a' },
   { id: 'household', name: 'Household', emoji: '🧻', color: '#8b8b8b' },
+  { id: 'pet', name: 'Pet (Clyde)', emoji: '🐾', color: '#a0703e' },
 ];
 
 const F = 'fridge', Z = 'freezer', P = 'pantry', C = 'cabinet';
@@ -245,6 +246,11 @@ const ROWS = [
   ['Stand Mixer', '🌀', 'kitchenware', C, 0, 0, 0, 'ea', 'mixer,kitchenaid'],
   ['Disposable Foil Pans', '🥘', 'kitchenware', 'holiday', 0, 0, 0, 'pack', 'foil pans'],
   ['Birthday Candles', '🕯️', 'kitchenware', 'holiday', 0, 0, 0, 'pack', 'candles'],
+  // Pet (Clyde)
+  ['Dog Food', '🐕', 'pet', 'pet', 0, 0, 180, 'bag', 'kibble,dry dog food,dog chow'],
+  ['Wet Dog Food', '🥫', 'pet', 'pet', 3, 0, 730, 'can', 'canned dog food'],
+  ['Dog Treats', '🦴', 'pet', 'pet', 0, 0, 365, 'bag', 'milk-bone,dog biscuits,treats'],
+  ['Dog Bones', '🦴', 'pet', 'pet', 0, 0, 365, 'pack', 'chew,rawhide,dental chews,bully stick'],
   // Household
   ['Aluminum Foil', '🧻', 'household', C, 0, 0, 0, 'roll', 'foil,tin foil'],
   ['Plastic Wrap', '🧻', 'household', C, 0, 0, 0, 'roll', 'cling wrap,saran wrap'],

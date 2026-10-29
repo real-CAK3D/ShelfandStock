@@ -6,6 +6,17 @@ import { esc, haptic } from './dom.js';
 const HELP = [
   // header & navigation
   ['[data-act=help]', '❓ Help mode', 'You’re in it! Tap anything on screen to see what it does. Tap “Done” at the top when you’re finished.'],
+  ['.live-strip', '🟢 Live', 'Who’s in the app right now and what they’re doing: adding to the list, editing the fridge, or at the store. Tap for the live panel. Needs Household sync.'],
+  ['[data-tour=stores]', '🛒 Our stores', 'Save the stores you use (find them near you or save the one you’re standing in). With sharing on, the house sees “Poppy is at Hannaford” and your list pops up when you walk in.'],
+  ['[data-act=me]', '👤 You', 'Who’s signed in on this phone. Tap to switch person, change your picture (emoji or a photo), or change your PIN.'],
+  ['.trip', '🚗 Store run', 'Someone’s heading to the store. Add what you need before the list closes. Tap to see who asked for what; the shopper taps Done shopping when they’re back.'],
+  ['[data-trip-new]', '🚗 I’m going to the store', 'Tell everyone when you’re going and when the list closes (like noon today). It shows up for everybody with a countdown.'],
+  ['.act', '🏠 Around the house', 'What everyone’s been up to: who requested what, who used the last of something, store runs and what got cooked.'],
+  ['.by', '🙋 Requested by', 'Who put this on the list.'],
+  ['.pet-bowl', '🐕 Clyde’s food bowl', 'Clyde’s kibble: what’s in the bowl and the dog food bag. Tap to open; when the bag runs low it shows up on the shopping list.'],
+  ['.pet-bone', '🦴 Clyde’s treats', 'Clyde’s treats and bones. Set a restock level so you never run out.'],
+  ['.d-water-bowl', '💧 Clyde’s water bowl', 'Just water. Keep it full!'],
+  ['[data-v=snap]', '📸 Snap', 'Take a picture of any item. A barcode gets the real label; otherwise a free on-phone AI guesses what it is. Keep your photo or use the app’s picture.'],
   ['[data-act=search]', '🔍 Find anything', 'Search your shelves, recipes and the food catalog. Tap a result to swing open the right cabinet with the item highlighted. Try “cinnamon”.'],
   ['[data-act=settings]', '⚙️ Settings', 'Change the wood finish, rename cabinets and shelves, add storage like a garage freezer, set staples, and back up or restore your kitchen.'],
   ['.fab', '＋ Add groceries', 'Add something to your kitchen: search 200+ foods, scan a barcode for the real label and nutrition, search product labels, or make a custom item. Shelf & Stock suggests the shelf and an expiration date.'],
