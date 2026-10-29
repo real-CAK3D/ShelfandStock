@@ -100,6 +100,12 @@ export function render(root) {
         <div class="row" style="gap:8px"><input class="input grow" data-sync-code placeholder="XXXX-XXXX-XXXX-XXXX" style="text-transform:uppercase"><button class="btn btn-ghost" data-sync-join>Join</button></div>`; })()}
     </div>
 
+    ${window.LarderNative ? '' : `<div class="card pad" style="margin-bottom:14px">
+      <h3 style="margin-bottom:6px">📱 Get the Android app</h3>
+      <p class="small muted" style="margin:0 0 10px">Adds notifications, the home-screen widget, and better product search. Open the file once it downloads; Android may ask you to allow installs from your browser.</p>
+      <a class="btn btn-brass btn-block" href="https://github.com/real-CAK3D/ShelfandStock/releases/latest/download/ShelfAndStock.apk">${icon('download')} Download the app</a>
+    </div>`}
+
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="margin-bottom:10px">Backup</h3>
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow" data-export>${icon('download')} Export</button><label class="btn btn-ghost grow">${icon('upload')} Import<input type="file" accept="application/json,.json" data-import hidden></label></div>

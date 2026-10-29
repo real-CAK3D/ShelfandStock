@@ -1,5 +1,5 @@
 // Offline-first service worker for the hosted/PWA build (the Android APK bundles files directly).
-const CACHE = 'shelfstock-v5';
+const CACHE = 'shelfstock-v6';
 const CORE = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/main.js', 'js/store.js', 'js/router.js', 'js/data/foods.js', 'js/data/recipes.js', 'js/data/holidays.js', 'js/data/layout.js',
   'js/ui/dom.js', 'js/ui/itemSheet.js', 'js/ui/label.js', 'js/ui/tour.js', 'js/ui/help.js', 'vendor/zxing.min.js', 'js/services/off.js', 'js/services/mealdb.js', 'js/services/sync.js', 'js/services/people.js', 'js/services/vision.js', 'js/services/live.js', 'js/services/stores.js', 'js/services/ocr.js', 'js/services/notify.js',
@@ -15,11 +15,11 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.origin === location.origin) {
-    // stale-while-revalidate for app files
+    // network-first for app files so updates show up on the next open; the cache is only the offline fallback
     e.respondWith(caches.open(CACHE).then(async c => {
-      const hit = await c.match(e.request);
-      const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
-      return hit || net;
+      const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; });
+      const slow = new Promise(res => setTimeout(res, 4000)).then(() => c.match(e.request));
+      try { return (await Promise.race([net, slow])) || await net; } catch { return (await c.match(e.request)) || Response.error(); }
     }));
   } else if (/openfoodfacts|themealdb/.test(url.hostname) && /\.(jpg|jpeg|png|webp)$/i.test(url.pathname)) {
     // cache product & recipe photos so they show offline
