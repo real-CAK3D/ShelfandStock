@@ -1,0 +1,9 @@
+_vendor/
+dist/
+node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/
+android/local.properties
+.vercel

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a3620"/><stop offset="1" stop-color="#2a180d"/></linearGradient>
+    <filter id="g"><feTurbulence type="fractalNoise" baseFrequency="0.004 0.09" numOctaves="4" seed="7"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.1"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+    <linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2d68a"/><stop offset=".6" stop-color="#c9a24a"/><stop offset="1" stop-color="#8c6c22"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".3" stop-color="#fff" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity=".35"/></linearGradient>
+    <linearGradient id="can" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a3324"/><stop offset=".35" stop-color="#d0634a"/><stop offset="1" stop-color="#7a2b1e"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#w)"/>
+  <rect width="512" height="512" rx="112" fill="#7a4a2a" filter="url(#g)" opacity=".55"/>
+  <!-- jar -->
+  <rect x="96" y="128" width="104" height="30" rx="9" fill="url(#b)"/>
+  <path d="M90 168c0-7 5-12 12-12h92c7 0 12 5 12 12v118H90z" fill="#f6e6c8" fill-opacity=".22" stroke="#f6e6c8" stroke-opacity=".75" stroke-width="7"/>
+  <path d="M97 222h102v62H97z" fill="#d9952b"/>
+  <circle cx="128" cy="204" r="18" fill="#c0533b"/><circle cx="168" cy="210" r="15" fill="#6f8f4e"/>
+  <path d="M90 168c0-7 5-12 12-12h92c7 0 12 5 12 12v118H90z" fill="url(#glass)"/>
+  <!-- can -->
+  <rect x="222" y="176" width="86" height="110" rx="10" fill="url(#can)"/>
+  <rect x="222" y="210" width="86" height="42" fill="#fbf5ea"/>
+  <rect x="222" y="176" width="86" height="12" rx="6" fill="#c7cdd2"/><rect x="222" y="276" width="86" height="10" rx="5" fill="#9aa3aa"/>
+  <!-- box -->
+  <rect x="326" y="134" width="94" height="152" rx="6" fill="#6f8f4e"/>
+  <rect x="338" y="160" width="70" height="56" rx="5" fill="#e7c877"/>
+  <rect x="326" y="134" width="94" height="14" fill="#5b7a3e"/>
+  <!-- shelf -->
+  <rect x="64" y="286" width="384" height="26" rx="6" fill="url(#b)"/>
+  <rect x="64" y="286" width="384" height="8" rx="4" fill="#fff" opacity=".35"/>
+  <path d="M100 312v26l26-26zM412 312v26l-26-26z" fill="#8c6c22"/>
+  <!-- wordmark -->
+  <text x="256" y="400" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="62" fill="#fbf0dc">Shelf &amp; Stock</text>
+</svg>
