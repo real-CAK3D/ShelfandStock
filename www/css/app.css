@@ -661,6 +661,24 @@ button.where-banner { font: inherit; }
 .busy .loader { background: var(--paper); border-radius: 22px; padding: 26px 34px; box-shadow: var(--shadow-lg); color: var(--ink-2); }
 .busy.out { animation: fadeOut .25s both; }
 
+/* Fluent 3D icons standing in for emoji */
+img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: contain; display: inline-block; pointer-events: none; }
+.jar .em img.emo, .tile .em img.emo { width: 1.2em; height: 1.2em; vertical-align: -0.15em; }
+.season-layer img.emo { width: 1em; height: 1em; }
+
+/* weekly report */
+.week-card { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 12px 0; padding: 12px; width: calc(100% - 24px); text-align: center; }
+.week-card .wk b { display: block; font: 700 20px Fraunces, Georgia, serif; }
+.week-card .wk small { font-size: 11.5px; color: var(--ink-3); font-weight: 600; }
+.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 120px; padding: 6px 4px 0; }
+.bar { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+.bar i { width: 100%; min-height: 3px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, var(--brass-2), var(--brass)); }
+.bar span { font-size: 11px; font-weight: 700; color: var(--ink-3); }
+.bar em { position: absolute; top: -2px; font-style: normal; font-size: 10px; color: var(--ink-2); }
+.prices { margin: 8px 0; }
+.prices .p { display: flex; justify-content: space-between; padding: 6px 2px; border-bottom: 1px dashed var(--paper-3); font-size: 14px; }
+.prices .p.best b { color: var(--sage); }
+
 /* live */
 .live-strip { display: flex; align-items: center; gap: 10px; width: calc(100% - 24px); margin: 10px 12px 0; padding: 8px 12px; border-radius: 16px; background: var(--paper); box-shadow: var(--shadow); text-align: left; }
 .live-strip > svg { width: 18px; height: 18px; color: var(--ink-3); flex: 0 0 auto; }

@@ -7,6 +7,7 @@ import { showItem, labelWalk } from '../ui/itemSheet.js';
 import { actions } from '../router.js';
 import { holidaysFor } from '../data/holidays.js';
 import { activityHTML, tripBannerHTML, tripDetail, liveStripHTML } from '../ui/house.js';
+import { weekCardHTML, reportSheet } from '../ui/report.js';
 
 // ---------- the rooms (swipe pages) ----------
 // Boxes are [left, top, width, height] in % of the wall. Swiping right from the stove wall
@@ -145,6 +146,7 @@ export function render(root) {
       <button class="chest wood-dark" data-go="settings" style="opacity:.85"><h4>＋ Storage</h4><p>Basement shelf, bar cart, camper…</p><span class="big">🧰</span></button>
     </div>
 
+    ${weekCardHTML()}
     <div class="stats stagger">
       <button class="stat t-tomato" data-filter="expiring"><b data-count="${expiring.length}">0</b><span>Use soon</span></button>
       <button class="stat t-sky" data-filter="low"><b data-count="${low.length}">0</b><span>Running low</span></button>
@@ -182,6 +184,7 @@ export function render(root) {
     }, { passive: true });
   }
   root.onclick = e => {
+    if (e.target.closest('[data-week]')) return reportSheet();
     const tr = e.target.closest('[data-trip]'); if (tr) return tripDetail(tr.dataset.trip, () => actions.go('list'));
     const rt = e.target.closest('[data-room]');
     if (rt) { room = Number(rt.dataset.room); haptic(); return rooms.scrollTo({ left: room * rooms.clientWidth, behavior: 'smooth' }); }

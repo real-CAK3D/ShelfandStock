@@ -8,8 +8,8 @@ import { state, update, subscribe } from '../store.js';
 const URL = 'https://rmshsswlodfvdffnlqdy.supabase.co/rest/v1/rpc/';
 const KEY = 'sb_publishable__aWybeZVozOcTHsjHq9jGg_HrQXqSpU'; // publishable (client-safe) key
 const LOCAL = 'shelfstock.sync';
-const SHARED = ['zones', 'items', 'shopping', 'events', 'recipes', 'favorites', 'history', 'members', 'trips', 'stores'];
-const MERGE = ['items', 'shopping', 'events', 'recipes', 'members', 'trips', 'stores'];
+const SHARED = ['zones', 'items', 'shopping', 'events', 'recipes', 'favorites', 'history', 'members', 'trips', 'stores', 'prices'];
+const MERGE = ['items', 'shopping', 'events', 'recipes', 'members', 'trips', 'stores', 'prices'];
 
 let info = load();
 const listeners = new Set();

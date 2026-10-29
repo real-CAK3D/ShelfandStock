@@ -18,6 +18,11 @@
 - **People & PINs** – Andrew, Zayne, Gemmie and Poppy sign in with their own 4-digit PIN (first time 0000); everything is signed ("Andrew requested coffee").
 - **Store runs & live activity** – "Poppy is going to Hannaford Thursday, list closes at noon", "Poppy is at Hannaford" via saved local stores, and a live panel of who is in the app doing what.
 - **Snap a photo** – barcode in the photo → real label; otherwise a free on-phone AI (TensorFlow.js MobileNet) identifies the food. Keep your photo or the app picture.
+- **Receipts & prices** – scan a receipt (on-phone OCR) to save prices per store; see the cheapest store for each item and an estimated trip total.
+- **Read dates off packages** – point the camera at "BEST BY 03/14/27" and the date and type fill in.
+- **This week** – spending, waste (and its cost), meals cooked and who pitched in.
+- **Notifications & widget (Android)** – background notices for store runs, "at the store", requests and run-outs, with a "list closes soon" reminder; a home-screen widget with the list and what to use soon.
+- **3D icons** – Microsoft Fluent Emoji 3D bundled offline (or use the phone emoji).
 - **Clyde** – water bowl, food bowl and a bone for his treats.
 - **Holiday themes** – automatic seasonal colors and decorations (or pick one / turn off).
 - **Household sync** – share one kitchen across phones with a household code (Supabase).

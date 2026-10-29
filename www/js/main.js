@@ -11,6 +11,8 @@ import { startSync } from './services/sync.js';
 import { me, seedMembers, signOut, setPin, avatar, AVATARS, resetPin } from './services/people.js';
 import { loginScreen } from './ui/login.js';
 import { startSeasons } from './ui/seasons.js';
+import { startEmoji } from './ui/emoji.js';
+import { startNotify, notifyHouse } from './services/notify.js';
 import { startLive, onLive, setDoing, announce, reconnectLive } from './services/live.js';
 import { startStoreWatch, onHere } from './services/stores.js';
 import { liveStripHTML, liveSheet, line } from './ui/house.js';
@@ -196,7 +198,15 @@ const WHY_DOING = { 'list-add': 'adding to the shopping list', 'list-check': 'sh
 subscribe(why => { if (WHY_DOING[why]) setDoing(WHY_DOING[why]); });
 onLive(() => $$('[data-live]').forEach(el => { el.innerHTML = liveStripHTML(); }));
 // my actions → everyone else's screen; their actions → a toast here
-window.addEventListener('shelfstock:mine', e => { const txt = line(e.detail).replace(/<[^>]+>/g, ''); const nm = txt.split(' ')[0]; announce(txt.slice(nm.length + 1), e.detail.type === 'atstore' ? '🛒' : ''); });
+window.addEventListener('shelfstock:mine', e => {
+  const h = e.detail, txt = line(h).replace(/<[^>]+>/g, ''), nm = txt.split(' ')[0];
+  announce(txt.slice(nm.length + 1), h.type === 'atstore' ? '🛒' : '');
+  // background notifications for the other phones
+  const kind = { requested: 'request', trip: 'trip', atstore: 'atstore' }[h.type] || (h.type === 'used' && h.last ? 'out' : null);
+  if (!kind) return;
+  const t = kind === 'trip' ? (state.trips || []).find(x => x.id === h.tripId) : null;
+  notifyHouse(kind, t && t.cutoff ? `${txt.replace(' 🚗', '')} — get your list in before ${new Date(t.cutoff).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : txt, t ? { cutoff: t.cutoff, store: t.store, date: t.date, by: t.by } : {});
+});
 window.addEventListener('shelfstock:live-act', e => { const p = e.detail; toast(`${p.name} ${p.text}`, { icon: p.emoji || '🟢' }); });
 onHere(store => { if (store) toast(`You're at ${store.name} — your list is ready`, { icon: '🛒', action: 'Open list', onAction: () => go('list') }); });
 
@@ -230,6 +240,7 @@ function profileSheet() {
 (async () => {
   go('kitchen', {}, { animate: false });
   startSync();
+  startEmoji();
   startSeasons();
   startStoreWatch();
   if (!(state.members || []).length) { const ms = await seedMembers(); update(s => { s.members = ms; }, 'member'); }
@@ -242,5 +253,6 @@ function profileSheet() {
   } else if (!me()) await loginScreen();
   paintMe();
   startLive();
+  startNotify();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) navigator.serviceWorker.register('sw.js').catch(() => { });
 })();

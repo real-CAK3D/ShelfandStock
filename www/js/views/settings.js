@@ -10,6 +10,8 @@ import { me, memberById, avatar, addMember, resetPin } from '../services/people.
 import { SEASONS } from '../ui/seasons.js';
 import { getPosition, findNearby, saveStore, removeStore, storeEmoji, miles, sharing, setSharing } from '../services/stores.js';
 import { loader } from '../ui/loader.js';
+import { reportSheet } from '../ui/report.js';
+import { KINDS as NOTIFY_KINDS, notifyPrefs, setNotifyPref, askNotificationPermission } from '../services/notify.js';
 
 const WOODS = [['walnut', '#3b2416', '#8a5a35'], ['oak', '#6b4a2b', '#b7884f'], ['cherry', '#5a2318', '#a4553a'], ['ash', '#4a4640', '#a89f90'], ['ebony', '#1d1612', '#4a3a2e']];
 
@@ -23,6 +25,8 @@ export function render(root) {
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="margin-bottom:14px">Wood finish</h3>
       <div class="swatches" style="margin-bottom:22px">${WOODS.map(([n, a, b]) => `<button class="swatch ${s.wood === n ? 'on' : ''}" data-wood="${n}" style="background:var(--grain) 0 0/300px 150px, linear-gradient(135deg, ${a}, ${b});background-blend-mode:soft-light"><span>${n[0].toUpperCase() + n.slice(1)}</span></button>`).join('')}</div>
+      <div class="setting"><div class="grow"><b>Icon style</b><small>3D icons look the same on every phone</small></div>
+        <div class="seg" style="width:170px"><button data-iconstyle="fluent" class="${(s.icons || 'fluent') === 'fluent' ? 'on' : ''}" style="position:relative;z-index:1">3D 🍎</button><button data-iconstyle="native" class="${s.icons === 'native' ? 'on' : ''}" style="position:relative;z-index:1" data-noemo>Phone 🍎</button></div></div>
       <div class="setting" style="border:0;padding-bottom:0"><div class="grow"><b>Cabinet doors</b><small>How cabinets look in the kitchen scene</small></div>
         <div class="seg" style="width:170px"><button data-cab="painted" class="${s.cabinets !== 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Painted</button><button data-cab="wood" class="${s.cabinets === 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Wood</button></div></div>
     </div>
@@ -51,7 +55,7 @@ export function render(root) {
     </div>
 
     <div class="card pad" style="margin-bottom:14px">
-      <h3>Kitchen report</h3>
+      <div class="row" style="justify-content:space-between"><h3>Kitchen report</h3><button class="btn btn-ghost btn-sm" data-week>📊 This week</button></div>
       <div class="kv"><div><small>Items tracked</small><b>${state.items.length}</b></div><div><small>Meals cooked</small><b>${cooked.length}</b></div><div><small>Tossed (waste)</small><b>${wasted.length}</b></div><div><small>Recipes saved</small><b>${state.recipes.length}</b></div></div>
       ${wasted.length ? `<p class="small muted">Most tossed: ${esc(Object.entries(wasted.reduce((a, h) => (a[h.name] = (a[h.name] || 0) + 1, a), {})).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, c]) => `${n} (${c})`).join(', '))}</p>` : ''}
     </div>
@@ -66,6 +70,13 @@ export function render(root) {
       <h3 style="margin-bottom:4px">🎉 Holiday themes</h3>
       <p class="small muted" style="margin:0 0 10px">A little seasonal pizazz: colors, drifting decorations and a garland on top. Auto follows the calendar.</p>
       <div class="row wrap" style="gap:6px">${[['auto', '✨ Auto'], ['off', 'Off'], ...Object.entries(SEASONS).map(([k, v]) => [k, `${v.emoji} ${v.name}`])].map(([k, l]) => `<button class="chip ${(s.season || 'auto') === k ? 'on' : ''}" data-season="${k}">${l}</button>`).join('')}</div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:14px" data-tour="notify">
+      <h3 style="margin-bottom:4px">🔔 Notifications</h3>
+      <p class="small muted" style="margin:0 0 6px">${window.LarderNative?.configureNotices ? 'Shows up on this phone even when the app is closed (checks about every 15 minutes). Needs Household sync.' : 'Notifications when the app is closed work in the Android app. Here, things show up live while the app is open.'}</p>
+      ${Object.entries(NOTIFY_KINDS).map(([k, l]) => `<div class="setting" style="padding:10px 4px"><div class="grow"><b style="font-weight:600">${l}</b></div><label class="toggle"><input type="checkbox" data-nk="${k}" ${notifyPrefs()[k] ? 'checked' : ''}><i></i></label></div>`).join('')}
+      ${window.LarderNative?.requestNotifications ? '<button class="btn btn-ghost btn-sm" data-nperm style="margin-top:8px">Allow notifications on this phone</button>' : ''}
     </div>
 
     <div class="card pad" style="margin-bottom:14px" data-tour="stores">
@@ -101,11 +112,11 @@ export function render(root) {
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow btn-sm" data-sample>Load sample kitchen</button><button class="btn btn-danger grow btn-sm" data-wipe>Erase everything</button></div>
     </div>
 
-    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.2 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
+    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.3 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
   </div>`;
 
   root.onclick = async e => {
-    const w = e.target.closest('.swatch[data-wood]'); // <html> also carries data-wood if (w) { update(s => { s.settings.wood = w.dataset.wood; }, 'wood'); document.documentElement.dataset.wood = w.dataset.wood; haptic(); return; }
+    const w = e.target.closest('.swatch[data-wood]'); /* <html> also carries data-wood */ if (w) { update(s => { s.settings.wood = w.dataset.wood; }, 'wood'); document.documentElement.dataset.wood = w.dataset.wood; haptic(); return; }
     const sdel = e.target.closest('[data-store-del]'); if (sdel) { removeStore(sdel.dataset.storeDel); return; }
     if (e.target.closest('[data-store-find]')) {
       const box = $('[data-store-results]', root);
@@ -124,7 +135,7 @@ export function render(root) {
         onMount: (b, close) => { b.querySelector('[data-sok]').onclick = async () => { const name = b.querySelector('[data-sname]').value.trim(); if (!name) return; try { const pos = await getPosition(); saveStore({ name, lat: pos.lat, lon: pos.lon }); close(); toast(`${name} saved`, { icon: '🛒' }); } catch (err) { toast(err.message, { icon: '⚠️' }); } }; } });
       return;
     }
-    const sz = e.target.closest('[data-season]'); if (sz) { haptic(); return update(st => { st.settings.season = sz.dataset.season; }); }
+    const sz = e.target.closest('.chip[data-season]'); /* <html> also carries data-season */ if (sz) { haptic(); return update(st => { st.settings.season = sz.dataset.season; }); }
     if (e.target.closest('[data-person-add]')) {
       openSheet({ title: 'Add someone', html: `<label class="field"><span>Name</span><input class="input" data-pname maxlength="20"></label><p class="small muted" style="margin-top:-6px">Their first PIN is 0000; they pick their own when they first sign in.</p><button class="btn btn-brass btn-block" data-padd>Add</button>`,
         onMount: (b, close) => { setTimeout(() => b.querySelector('[data-pname]').focus(), 200); b.querySelector('[data-padd]').onclick = async () => { const name = b.querySelector('[data-pname]').value.trim(); if (!name) return; await addMember(name); close(); toast(`${name} added — first PIN is 0000`, { icon: '👋' }); }; } });
@@ -152,6 +163,9 @@ export function render(root) {
       if (window.LarderNative?.share) window.LarderNative.share(text); else { try { await navigator.clipboard.writeText(syncInfo().code); toast('Code copied', { icon: '📋' }); } catch { } }
       return;
     }
+    if (e.target.closest('[data-week]')) return reportSheet();
+    if (e.target.closest('[data-nperm]')) return askNotificationPermission();
+    const ics = e.target.closest('[data-iconstyle]'); if (ics) { haptic(); return update(st => { st.settings.icons = ics.dataset.iconstyle; }); }
     const cab = e.target.closest('[data-cab]'); if (cab) { haptic(); return update(s => { s.settings.cabinets = cab.dataset.cab; }); }
     const hh = e.target.closest('[data-hh]'); if (hh) return update(s => { s.settings.household = Math.max(1, s.settings.household + Number(hh.dataset.hh)); });
     const wd = e.target.closest('[data-wd]'); if (wd) return update(s => { s.settings.expiryWarnDays = Math.max(0, s.settings.expiryWarnDays + Number(wd.dataset.wd)); });
@@ -182,6 +196,7 @@ export function render(root) {
     if (t.dataset.zkind) update(s => { s.zones.find(z => z.id === t.dataset.zkind).kind = t.value; }, 'zone');
     if (t.dataset.sname) { const [zid, sid] = t.dataset.sname.split('|'); update(s => { s.zones.find(z => z.id === zid).sections.find(x => x.id === sid).name = t.value.trim() || 'Shelf'; }, 'zone'); }
     if (t.dataset.hap !== undefined) update(s => { s.settings.haptics = t.checked; });
+    if (t.dataset.nk) setNotifyPref(t.dataset.nk, t.checked);
     if (t.dataset.locshare !== undefined) { setSharing(t.checked); toast(t.checked ? 'The house will see when you’re at a saved store' : 'Store sharing off', { icon: '📍' }); }
     if (t.dataset.staple !== undefined) { const f = searchFoods(t.value, 1)[0]; if (f) update(s => { if (!s.settings.stapleIds.includes(f.id)) s.settings.stapleIds.push(f.id); }); t.value = ''; }
     if (t.dataset.import !== undefined && t.files[0]) importData(t.files[0]);

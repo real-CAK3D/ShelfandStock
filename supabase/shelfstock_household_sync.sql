@@ -64,3 +64,17 @@ revoke all on function public.shelfstock_push(text, jsonb, integer) from public;
 grant execute on function public.shelfstock_create(text, jsonb) to anon, authenticated;
 grant execute on function public.shelfstock_pull(text) to anon, authenticated;
 grant execute on function public.shelfstock_push(text, jsonb, integer) to anon, authenticated;
+
+-- ---- migration shelfstock_notices: background notifications ----
+create table if not exists shelfstock.notices (
+  id bigserial primary key,
+  household_id uuid not null references shelfstock.households(id) on delete cascade,
+  by_member text, kind text not null, text text not null,
+  data jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
+);
+create index if not exists notices_household_id_idx on shelfstock.notices (household_id, id);
+alter table shelfstock.notices enable row level security;
+revoke all on shelfstock.notices from public, anon, authenticated;
+-- public.shelfstock_notify(code, by, kind, text, data) → id   (keeps 14 days)
+-- public.shelfstock_notices(code, after_id) → newer notices, oldest first
+-- (full function bodies applied via the Supabase migration of the same name)

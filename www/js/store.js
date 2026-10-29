@@ -8,7 +8,7 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 8;
+const VERSION = 9;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -22,7 +22,7 @@ function blank() {
   return {
     v: VERSION,
     zones: structuredClone(DEFAULT_ZONES),
-    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [],
+    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [],
     settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', season: 'auto', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
   };
 }
@@ -42,6 +42,8 @@ const MIGRATIONS = {
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
     }
   },
+  // v8 → v9: price tracking from receipts
+  9: s => { s.prices ||= []; },
   // v7 → v8: profile pictures are pick-able icons instead of faces; saved local stores
   8: s => {
     const faces = ['🧔', '🧒', '👩', '👴', '👵', '👨', '👧', '🧑'], icons = ['🍳', '🎮', '🌻', '⚓', '🥕', '🧀', '🍕', '🌮'];
@@ -419,6 +421,51 @@ export const catOf = id => CAT_BY_ID[id] || { name: 'Other', emoji: '📦', colo
 // Inline style giving an element its category color (used to tint emoji backgrounds).
 export const tint = cat => `--tint:${catOf(cat).color}`;
 
+// ---------- prices (from receipts) ----------
+// Every receipt line becomes a price point for that item at that store.
+export function recordReceipt({ store, storeId, total, items }) {
+  const date = today(), by = who();
+  update(s => {
+    s.prices ||= [];
+    for (const i of items) s.prices.push({ id: uid(), foodId: i.foodId || null, name: i.name, store, storeId: storeId || null, price: Number(i.price), date, by });
+    s.prices = s.prices.slice(-1500);
+    s.history.push({ ts: Date.now(), by, type: 'receipt', name: store, total: total ?? items.reduce((a, i) => a + Number(i.price), 0), count: items.length });
+  }, 'receipt');
+}
+
+const sameItem = (p, foodId, name) => foodId ? p.foodId === foodId : p.name.toLowerCase() === String(name).toLowerCase();
+// Latest price at each store, cheapest first.
+export function priceInfo(foodId, name) {
+  const latest = new Map();
+  for (const p of (state.prices || []).filter(p => sameItem(p, foodId, name))) { const prev = latest.get(p.store); if (!prev || p.date >= prev.date) latest.set(p.store, p); }
+  const byStore = [...latest.values()].sort((a, b) => a.price - b.price);
+  return { byStore, cheapest: byStore[0] || null, last: (state.prices || []).filter(p => sameItem(p, foodId, name)).at(-1) || null };
+}
+export const money = n => '$' + (Math.round(Number(n) * 100) / 100).toFixed(2);
+
+// ---------- weekly report ----------
+export function weekReport(weeksAgo = 0) {
+  const now = new Date(); const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - start.getDay() - weeksAgo * 7);
+  const end = new Date(start); end.setDate(end.getDate() + 7);
+  const inWeek = (state.history || []).filter(h => h.ts >= +start && h.ts < +end);
+  const tossed = inWeek.filter(h => h.type === 'tossed');
+  const value = h => { const pi = priceInfo(h.foodId, h.name); return pi.last ? pi.last.price : 0; };
+  const spentByDay = Array(7).fill(0);
+  for (const h of inWeek.filter(h => h.type === 'receipt')) spentByDay[new Date(h.ts).getDay()] += Number(h.total) || 0;
+  const people = {};
+  for (const h of inWeek) if (h.by && ['requested', 'bought', 'cooked', 'used', 'trip'].includes(h.type)) people[h.by] = (people[h.by] || 0) + 1;
+  const wasteCats = {};
+  for (const h of tossed) wasteCats[h.cat || 'other'] = (wasteCats[h.cat || 'other'] || 0) + 1;
+  return {
+    start: iso(start), end: iso(new Date(+end - 1)),
+    spent: spentByDay.reduce((a, b) => a + b, 0), spentByDay, receipts: inWeek.filter(h => h.type === 'receipt').length,
+    tossed: tossed.length, tossedValue: tossed.reduce((a, h) => a + value(h), 0), tossedItems: tossed.map(h => h.name),
+    usedUp: inWeek.filter(h => h.type === 'used' && h.last).length, cooked: inWeek.filter(h => h.type === 'cooked').length,
+    bought: inWeek.filter(h => h.type === 'bought').length, requested: inWeek.filter(h => h.type === 'requested').length,
+    people, wasteCats,
+  };
+}
+
 // ---------- store trips ----------
 // "Poppy is going to the store Thursday — get your list in before noon."
 export function addTrip({ date, cutoff, store, note }) {
@@ -523,6 +570,13 @@ export function seedSample() {
       s.history.push({ ts: now - 26 * H, by: gemmie, type: 'used', last: true, name: 'Sage', foodId: 'sage', cat: 'spices' });
       s.history.push({ ts: now - 3 * H, by: poppy, type: 'trip', tripId: trip.id, name: 'Hannaford', date: thu });
       s.history.push({ ts: now - 30 * H, by: andrew, type: 'cooked', name: 'Spaghetti Bolognese', recipeId: 'b-spaghetti-bolognese' });
+      const P = (foodId, store, price, daysAgo) => s.prices.push({ id: uid(), foodId, name: FOOD_BY_ID[foodId].name, store, storeId: null, price, date: addDays(T, -daysAgo), by: poppy });
+      s.prices = [];
+      [['milk', 3.49, 3.18], ['eggs', 3.99, 3.62], ['coffee', 8.99, 7.98], ['dog-food', 21.99, 18.97], ['dog-treats', 6.49, 5.88], ['strawberries', 3.99, 2.98], ['bananas', 1.38, 1.24], ['bread', 2.99, 2.48], ['cheddar-cheese', 3.29, 2.97], ['chicken-breast', 8.97, 7.94]]
+        .forEach(([id, h, w]) => { P(id, 'Hannaford', h, 9); P(id, 'Walmart', w, 16); });
+      s.history.push({ ts: now - 2 * 864e5, by: poppy, type: 'receipt', name: 'Hannaford', total: 64.12, count: 14 });
+      s.history.push({ ts: now - 30 * H, by: zayne, type: 'tossed', name: 'Strawberries', foodId: 'strawberries', cat: 'produce' });
+      s.history.push({ ts: now - 50 * H, by: gemmie, type: 'tossed', name: 'Lettuce', foodId: 'lettuce', cat: 'produce' });
       s.history.sort((a, b) => a.ts - b.ts);
     }
   }, 'seed');

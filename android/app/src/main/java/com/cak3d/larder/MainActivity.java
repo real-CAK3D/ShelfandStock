@@ -185,6 +185,31 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        // Background notifications: where to look, who "me" is, and which kinds to show.
+        @JavascriptInterface
+        public void configureNotices(String url, String key, String code, String me, String kinds) {
+            android.content.SharedPreferences p = NoticeWorker.prefs(MainActivity.this);
+            boolean newCode = !code.equals(p.getString("code", ""));
+            android.content.SharedPreferences.Editor e = p.edit().putString("url", url).putString("key", key).putString("code", code).putString("me", me).putString("kinds", kinds);
+            if (newCode) e.putLong("lastId", -1).putString("trips", "[]");
+            e.apply();
+            NoticeWorker.schedule(MainActivity.this);
+            if (!code.isEmpty() && !p.getBoolean("askedNotify", false)) { p.edit().putBoolean("askedNotify", true).apply(); requestNotifications(); }
+        }
+
+        @JavascriptInterface
+        public void requestNotifications() {
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                runOnUiThread(() -> requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 4));
+        }
+
+        // Home-screen widget contents (sent by the app whenever the kitchen changes).
+        @JavascriptInterface
+        public void updateWidget(String json) {
+            NoticeWorker.prefs(MainActivity.this).edit().putString("widget", json).apply();
+            WidgetProvider.refresh(MainActivity.this);
+        }
+
         @JavascriptInterface
         public void share(String text) {
             Intent i = new Intent(Intent.ACTION_SEND);

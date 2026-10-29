@@ -2,7 +2,7 @@
 // last of the eggs") and store trips ("Poppy is going to the store Thursday — get your list in
 // before noon today").
 
-import { state, addTrip, finishTrip, activeTrips, today, addDays, fmtDate } from '../store.js';
+import { state, addTrip, finishTrip, activeTrips, today, addDays, fmtDate, priceInfo, money } from '../store.js';
 import { memberById, firstName, avatar, me } from '../services/people.js';
 import { esc, openSheet, toast, haptic, confetti, icon } from './dom.js';
 import { liveState } from '../services/live.js';
@@ -101,6 +101,7 @@ export function tripDetail(id, onPutAway) {
   openSheet({
     title: `${esc(firstName(t.by))}'s store run`,
     html: `<p class="muted" style="margin-top:0">${esc(t.store || 'The store')} · ${dayWord(t.date)}${t.cutoff ? ` · list closes ${timeWord(t.cutoff)}` : ''}</p>
+      ${(() => { const est = state.shopping.reduce((a, e) => { const pi = priceInfo(e.foodId, e.name); const at = pi.byStore.find(p => p.store === t.store) || pi.cheapest; return a + (at ? at.price * (Number(e.qty) || 1) : 0); }, 0); return est ? `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">💵 <span>Estimated total: <b>${money(est)}</b> (from past receipts)</span></div>` : ''; })()}
       ${Object.keys(reqBy).length ? `<div class="group-h">Who asked for what<span class="line"></span></div>${Object.entries(reqBy).map(([by, names]) => `<div class="act">${avatar(memberById(by), 30)}<span class="t"><b>${esc(firstName(by))}</b><small>${esc(names.join(', '))}</small></span></div>`).join('')}` : '<p class="muted">Nobody has added anything yet.</p>'}
       ${mine ? `<div class="row" style="gap:8px;margin-top:14px"><button class="btn btn-sage grow" data-done>✅ Done shopping</button><button class="btn btn-ghost" data-cancel>Cancel trip</button></div>` : ''}`,
     onMount: (b, close) => {

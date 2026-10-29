@@ -1,11 +1,12 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
-import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span } from '../store.js';
+import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money } from '../store.js';
 import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
 import { lookupBarcode, searchProducts } from '../services/off.js';
 import { identify, photoFromFile } from '../services/vision.js';
+import { readText, parseDates } from '../services/ocr.js';
 import { loader } from './loader.js';
 import { actions } from '../router.js';
 
@@ -52,6 +53,7 @@ export function showItem(id) {
       </div>
       ${it.tags?.length ? `<div class="row wrap" style="gap:6px;margin-bottom:8px">${it.tags.map(t => `<span class="pill">#${esc(t)}</span>`).join('')}</div>` : ''}
       ${it.notes ? `<p style="margin:6px 0 10px;color:var(--ink-2)">📝 ${esc(it.notes)}</p>` : ''}
+      ${(() => { const pi = priceInfo(it.foodId, it.name); return pi.byStore.length ? `<div class="group-h">Prices<span class="line"></span></div><div class="prices">${pi.byStore.map((p, i) => `<div class="p ${i === 0 && pi.byStore.length > 1 ? 'best' : ''}"><span>${esc(p.store)}${i === 0 && pi.byStore.length > 1 ? ' · cheapest' : ''}</span><b>${money(p.price)}</b></div>`).join('')}</div>` : ''; })()}
       ${tipFor(it)}
       ${it.off ? `<h3 style="margin:16px 0 4px">Label</h3>${productBadges(it.off)}${nutritionLabel(it.off)}` : ''}
       ${uses.length ? `<h3 style="margin:16px 0 8px">Cook with it</h3><div class="stagger">${uses.map(r => { const m = recipeMatch(r); return `<button class="irow" style="width:100%;text-align:left" data-r="${r.id}"><span class="em">${r.emoji}</span><span class="t"><b>${esc(r.title)}</b><small>${m.have}/${m.total} ingredients on hand</small></span>${icon('next')}</button>`; }).join('')}</div>` : ''}
@@ -113,7 +115,9 @@ function datePickerHTML(it, current, currentType) {
       ${typ ? `<button type="button" class="chip on" data-plus="${typ}">✨ Typical ${span(typ)}</button>` : ''}
       ${quick.map(([l, d]) => `<button type="button" class="chip" data-plus="${d}">${l}</button>`).join('')}
       <button type="button" class="chip" data-nodate>No date</button>
-    </div>`;
+    </div>
+    <label class="btn btn-ghost btn-sm" style="margin:-4px 0 12px">📷 Read it off the package<input type="file" accept="image/*" capture="environment" data-ocrdate hidden></label>
+    <div data-ocrres></div>`;
 }
 
 function wireDatePicker(b) {
@@ -122,6 +126,19 @@ function wireDatePicker(b) {
   const input = $('[data-date]', b);
   b.querySelectorAll('[data-plus]').forEach(c => c.onclick = () => { input.value = addDays(today(), Number(c.dataset.plus)); haptic(); input.animate([{ background: 'var(--honey-2)' }, { background: 'var(--paper)' }], { duration: 600 }); });
   $('[data-nodate]', b).onclick = () => { input.value = ''; haptic(); };
+  $('[data-ocrdate]', b).onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const out = $('[data-ocrres]', b);
+    out.innerHTML = loader('Reading the package…', ['📷', '🔍', '📅']);
+    try {
+      const found = parseDates(await readText(f, t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; }));
+      if (!found.length) { out.innerHTML = '<p class="small muted">Couldn’t spot a date. Get closer to the printed date and try again, or pick it below.</p>'; return; }
+      out.innerHTML = `<p class="small" style="margin:0 0 6px;font-weight:600">Found on the package:</p><div class="row wrap" style="gap:6px;margin-bottom:12px">${found.slice(0, 4).map((d, i) => `<button type="button" class="chip ${i ? '' : 'on'}" data-found="${i}">${d.type ? d.type + ' ' : ''}${fmtDate(d.date, { month: 'short', day: 'numeric', year: 'numeric' })}</button>`).join('')}</div>`;
+      const use = d => { input.value = d.date; if (d.type) $(`[data-dtype] [data-v="${d.type}"]`, b)?.click(); haptic(15); };
+      use(found[0]);
+      out.querySelectorAll('[data-found]').forEach(c => c.onclick = () => { out.querySelectorAll('[data-found]').forEach(x => x.classList.toggle('on', x === c)); use(found[Number(c.dataset.found)]); });
+    } catch { out.innerHTML = '<p class="small muted">The text reader needs an internet connection the first time.</p>'; }
+  };
   return () => ({ expires: input.value || null, dateType: type });
 }
 
