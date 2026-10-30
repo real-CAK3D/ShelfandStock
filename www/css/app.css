@@ -741,6 +741,20 @@ img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: co
 .setting { display: flex; align-items: center; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--paper-2); }
 .setting .grow b { display: block; font-weight: 600; }
 .setting .grow small { color: var(--ink-3); font-size: 12.5px; }
+/* settings menu rows and sub-page header */
+.set-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--paper-2); text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: 0; transition: background .2s; }
+.set-row:last-child { border-bottom: 0; }
+.set-row:active { background: var(--paper-2); }
+.set-row > svg { width: 18px; height: 18px; color: var(--ink-3); flex: 0 0 auto; }
+.set-row .grow { min-width: 0; }
+.set-row .grow small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-emo { font-size: 24px; width: 32px; text-align: center; flex: 0 0 auto; }
+.set-head { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
+.set-head .icon-btn { color: var(--ink); background: var(--paper-2); border-color: var(--paper-3); flex: 0 0 auto; }
+.set-head small { color: var(--ink-3); font-size: 12px; display: block; }
+.set-head h2 { font-size: 22px; margin: 0; line-height: 1.15; }
+.set-enter { animation: setIn .28s var(--ease) both; }
+@keyframes setIn { from { opacity: 0; transform: translateX(18px); } }
 .zone-edit { padding: 12px; border-radius: 14px; background: var(--paper-2); margin-bottom: 10px; }
 .zone-edit .sec { display: flex; gap: 6px; margin-top: 6px; }
 .zone-edit .sec .input { height: 38px; font-size: 14px; }
@@ -755,3 +769,22 @@ img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: co
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* food recalls (openFDA) */
+.recall-banner { display: flex; gap: 10px; align-items: center; width: calc(100% - 24px); margin: 10px 12px 0; padding: 12px 14px; border: 1px solid #e8b4a6; border-radius: 16px; background: var(--tomato-2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; font-size: 14px; }
+.recall-banner > span { flex: 1; }
+.recall-btn { color: var(--tomato) !important; border-color: #e8b4a6 !important; background: var(--tomato-2) !important; }
+.recall { padding: 12px; border-radius: 14px; background: var(--paper-2); margin-bottom: 8px; border-left: 4px solid #d9a441; }
+.recall.c1 { border-left-color: var(--tomato); }
+.recall b { display: block; font-size: 14px; line-height: 1.3; }
+.recall small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+.recall p { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+.recall-hit { font-size: 13px; margin-bottom: 8px; padding: 8px 10px; border-radius: 10px; background: var(--tomato-2); }
+
+/* which is cheaper? */
+.up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.up-side { padding: 10px; border-radius: 14px; background: var(--paper-2); border: 2px solid transparent; transition: border-color .25s, background .25s; min-width: 0; }
+.up-side .field { margin-bottom: 8px; }
+.up-side .input { height: 40px; font-size: 15px; padding: 0 8px; min-width: 0; }
+.up-side.win { border-color: var(--sage); background: var(--sage-2); }
+.up-per { font-weight: 700; text-align: center; padding-top: 4px; font-size: 14px; }

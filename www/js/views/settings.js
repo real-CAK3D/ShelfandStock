@@ -1,4 +1,4 @@
-// Settings: finish, household, storage layout editor, staples, backup/restore, data sources.
+// Settings: a menu of pages (look, cooking, storage by room, people, stores, notifications, sync, report, backup).
 
 import { state, update, replaceState, resetAll, seedSample, uid } from '../store.js';
 import { ZONE_KINDS } from '../data/layout.js';
@@ -8,121 +8,215 @@ import { actions } from '../router.js';
 import { syncInfo, createHousehold, joinHousehold, leaveHousehold, pull, push } from '../services/sync.js';
 import { me, memberById, avatar, addMember, resetPin } from '../services/people.js';
 import { SEASONS } from '../ui/seasons.js';
+import { roomList } from './kitchen.js';
 import { getPosition, findNearby, saveStore, removeStore, storeEmoji, miles, sharing, setSharing } from '../services/stores.js';
 import { loader } from '../ui/loader.js';
 import { reportSheet } from '../ui/report.js';
 import { KINDS as NOTIFY_KINDS, notifyPrefs, setNotifyPref, askNotificationPermission } from '../services/notify.js';
 
 const WOODS = [['walnut', '#3b2416', '#8a5a35'], ['oak', '#6b4a2b', '#b7884f'], ['cherry', '#5a2318', '#a4553a'], ['ash', '#4a4640', '#a89f90'], ['ebony', '#1d1612', '#4a3a2e']];
+const cap = w => w[0].toUpperCase() + w.slice(1);
 
-export function render(root) {
-  const s = state.settings;
-  const wasted = state.history.filter(h => h.type === 'tossed');
-  const cooked = state.history.filter(h => h.type === 'cooked');
-  root.innerHTML = `<div class="pad">
-    <h2 style="font-size:26px;margin:4px 0 14px">Settings</h2>
+// Settings is a menu of pages; Your storage drills down room › place. Kept across re-renders.
+let page = '', room = null, zone = null, host = null;
+const PAGES = {
+  look: '🎨 Look & feel', cooking: '🍽️ Cooking & staples', storage: '🗄️ Your storage', people: '👥 People',
+  stores: '🛒 Our stores', notify: '🔔 Notifications', sync: '☁️ Household sync', report: '📊 Kitchen report', data: '💾 Backup & start over',
+};
 
-    <div class="card pad" style="margin-bottom:14px">
-      <h3 style="margin-bottom:14px">Wood finish</h3>
-      <div class="swatches" style="margin-bottom:22px">${WOODS.map(([n, a, b]) => `<button class="swatch ${s.wood === n ? 'on' : ''}" data-wood="${n}" style="background:var(--grain) 0 0/300px 150px, linear-gradient(135deg, ${a}, ${b});background-blend-mode:soft-light"><span>${n[0].toUpperCase() + n.slice(1)}</span></button>`).join('')}</div>
-      <div class="setting"><div class="grow"><b>Icon style</b><small>3D icons look the same on every phone</small></div>
-        <div class="seg" style="width:170px"><button data-iconstyle="fluent" class="${(s.icons || 'fluent') === 'fluent' ? 'on' : ''}" style="position:relative;z-index:1">3D 🍎</button><button data-iconstyle="native" class="${s.icons === 'native' ? 'on' : ''}" style="position:relative;z-index:1" data-noemo>Phone 🍎</button></div></div>
-      <div class="setting" style="border:0;padding-bottom:0"><div class="grow"><b>Cabinet doors</b><small>How cabinets look in the kitchen scene</small></div>
-        <div class="seg" style="width:170px"><button data-cab="painted" class="${s.cabinets !== 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Painted</button><button data-cab="wood" class="${s.cabinets === 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Wood</button></div></div>
+// Hardware/browser back: step out one level. Returns true if it handled it.
+export function back() {
+  if (!host || !host.querySelector('.settings-page')) return false;
+  if (zone) zone = null; else if (room) room = null; else if (page) page = ''; else return false;
+  render(host); host.scrollTop = 0; return true;
+}
+
+// storage rooms: the kitchen walls, then anything that isn't on a wall (pantry, holiday closet, places you added)
+function rooms() {
+  const walls = roomList().map(r => ({ ...r, zones: r.zones.filter(id => state.zones.some(z => z.id === id)) }));
+  const placed = new Set(walls.flatMap(r => r.zones));
+  return [...walls, { id: 'other', label: '📦 Other storage', zones: state.zones.filter(z => !placed.has(z.id)).map(z => z.id) }];
+}
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const itemsIn = z => state.items.filter(i => z.sections.some(s => s.id === i.sectionId)).length;
+const row = (key, val, title, sub, lead = '') => `<button class="setting set-row" data-${key}="${attr(val)}">${lead}<div class="grow"><b>${title}</b><small>${sub}</small></div>${icon('next')}</button>`;
+
+function home(s) {
+  const si = syncInfo(), people = (state.members || []).map(m => m.name);
+  const sum = {
+    look: `${cap(s.wood)} wood · ${s.cabinets === 'wood' ? 'wood' : 'painted'} doors · ${s.season === 'off' ? 'no theme' : s.season && s.season !== 'auto' ? SEASONS[s.season]?.name || 'theme' : 'auto theme'}`,
+    cooking: `Serves ${s.household} · ${s.stapleIds.length} staples · warn ${s.expiryWarnDays} days early`,
+    storage: `${state.zones.length} places · ${state.items.length} items`,
+    people: people.length ? esc(people.join(', ')) : 'Nobody yet',
+    stores: (state.stores || []).length ? esc(state.stores.map(x => x.name).join(', ')) : 'None saved yet',
+    notify: `${Object.values(notifyPrefs()).filter(Boolean).length} of ${Object.keys(NOTIFY_KINDS).length} on`,
+    sync: si.code ? `On · ${esc(si.code)}` : 'Off · just this phone',
+    report: `${state.history.filter(h => h.type === 'cooked').length} meals cooked · ${state.history.filter(h => h.type === 'tossed').length} tossed`,
+    data: 'Export, import, walkthrough, start over',
+  };
+  return `<h2 style="font-size:26px;margin:4px 0 14px">Settings</h2>
+    <div class="card pad" style="margin-bottom:14px;padding-top:4px;padding-bottom:4px">
+      ${Object.entries(PAGES).map(([k, t]) => row('page', k, t, sum[k])).join('')}
     </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <div class="setting"><div class="grow"><b>Household size</b><small>Default servings when planning</small></div><div class="stepper" style="height:38px"><button data-hh="-1">−</button><input value="${s.household}" readonly style="width:40px"><button data-hh="1">+</button></div></div>
-      <div class="setting"><div class="grow"><b>“Use soon” warning</b><small>Flag items this many days before their date</small></div><div class="stepper" style="height:38px"><button data-wd="-1">−</button><input value="${s.expiryWarnDays}" readonly style="width:40px"><button data-wd="1">+</button></div></div>
-      <div class="setting" style="border:0"><div class="grow"><b>Haptics</b><small>Little buzzes when you tap</small></div><label class="toggle"><input type="checkbox" data-hap ${s.haptics ? 'checked' : ''}><i></i></label></div>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <h3>Always-on-hand staples</h3>
-      <p class="small muted" style="margin:4px 0 10px">Recipes treat these as stocked even if you don't track them.</p>
-      <div class="row wrap" style="gap:6px" data-staples>${s.stapleIds.map(id => `<button class="chip on" data-unstaple="${id}">${FOOD_BY_ID[id]?.emoji || ''} ${esc(FOOD_BY_ID[id]?.name || id)} ✕</button>`).join('')}</div>
-      <input class="input" style="margin-top:10px" placeholder="Add a staple (e.g. sugar)…" data-staple list="staple-dl"><datalist id="staple-dl"></datalist>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <div class="row" style="justify-content:space-between;margin-bottom:10px"><h3>Your storage</h3><button class="btn btn-ghost btn-sm" data-addzone>${icon('plus')} Add place</button></div>
-      <p class="small muted" style="margin:-4px 0 10px">Rename cabinets and shelves to match your real kitchen. Add a garage freezer, bar cart, basement shelves…</p>
-      ${state.zones.map(z => `<div class="zone-edit" data-z="${z.id}">
-        <div class="row"><input class="input" value="${attr(z.name)}" data-zname="${z.id}" style="height:40px;font-weight:600"><select class="input" style="width:120px;height:40px;font-size:13px" data-zkind="${z.id}">${Object.entries(ZONE_KINDS).map(([k, v]) => `<option value="${k}" ${z.kind === k ? 'selected' : ''}>${v.emoji} ${v.label}</option>`).join('')}</select><button class="icon-btn" style="color:var(--tomato);background:var(--tomato-2);border:0;width:40px;height:40px;flex:0 0 auto" data-zdel="${z.id}" aria-label="Delete">${icon('trash')}</button></div>
-        ${z.sections.map(sec => `<div class="sec"><input class="input" value="${attr(sec.name)}" data-sname="${z.id}|${sec.id}"><button class="btn btn-ghost btn-sm" data-sdel="${z.id}|${sec.id}" aria-label="Delete shelf">${icon('minus')}</button></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-sadd="${z.id}">${icon('plus')} Shelf / section</button>
-      </div>`).join('')}
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <div class="row" style="justify-content:space-between"><h3>Kitchen report</h3><button class="btn btn-ghost btn-sm" data-week>📊 This week</button></div>
-      <div class="kv"><div><small>Items tracked</small><b>${state.items.length}</b></div><div><small>Meals cooked</small><b>${cooked.length}</b></div><div><small>Tossed (waste)</small><b>${wasted.length}</b></div><div><small>Recipes saved</small><b>${state.recipes.length}</b></div></div>
-      ${wasted.length ? `<p class="small muted">Most tossed: ${esc(Object.entries(wasted.reduce((a, h) => (a[h.name] = (a[h.name] || 0) + 1, a), {})).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, c]) => `${n} (${c})`).join(', '))}</p>` : ''}
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <div class="row" style="justify-content:space-between;margin-bottom:6px"><h3>👥 People</h3><button class="btn btn-ghost btn-sm" data-person-add>${icon('plus')} Add</button></div>
-      ${(state.members || []).map(m => `<div class="setting">${avatar(m, 40)}<div class="grow"><b>${esc(m.name)}${m.id === me()?.id ? ' <span class="pill ok">you</span>' : ''}</b><small>${m.mustReset ? 'Hasn’t set a PIN yet (0000)' : 'PIN set'}</small></div><button class="btn btn-ghost btn-sm" data-pin-reset="${m.id}">Reset PIN</button>${m.id !== me()?.id ? `<button class="btn btn-ghost btn-sm" data-person-del="${m.id}" aria-label="Remove ${attr(m.name)}">${icon('trash')}</button>` : ''}</div>`).join('')}
-      <p class="small muted" style="margin:8px 0 0">Reset sets a PIN back to 0000; they choose a new one next time they sign in.</p>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px">
-      <h3 style="margin-bottom:4px">🎉 Holiday themes</h3>
-      <p class="small muted" style="margin:0 0 10px">A little seasonal pizazz: colors, drifting decorations and a garland on top. Auto follows the calendar.</p>
-      <div class="row wrap" style="gap:6px">${[['auto', '✨ Auto'], ['off', 'Off'], ...Object.entries(SEASONS).map(([k, v]) => [k, `${v.emoji} ${v.name}`])].map(([k, l]) => `<button class="chip ${(s.season || 'auto') === k ? 'on' : ''}" data-season="${k}">${l}</button>`).join('')}</div>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px" data-tour="notify">
-      <h3 style="margin-bottom:4px">🔔 Notifications</h3>
-      <p class="small muted" style="margin:0 0 6px">${window.LarderNative?.configureNotices ? 'Shows up on this phone even when the app is closed (checks about every 15 minutes). Needs Household sync.' : 'Notifications when the app is closed work in the Android app. Here, things show up live while the app is open.'}</p>
-      ${Object.entries(NOTIFY_KINDS).map(([k, l]) => `<div class="setting" style="padding:10px 4px"><div class="grow"><b style="font-weight:600">${l}</b></div><label class="toggle"><input type="checkbox" data-nk="${k}" ${notifyPrefs()[k] ? 'checked' : ''}><i></i></label></div>`).join('')}
-      ${window.LarderNative?.requestNotifications ? '<button class="btn btn-ghost btn-sm" data-nperm style="margin-top:8px">Allow notifications on this phone</button>' : ''}
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px" data-tour="stores">
-      <h3 style="margin-bottom:4px">🛒 Our stores</h3>
-      <p class="small muted" style="margin:0 0 10px">Save the stores you use. When someone is at one, the house sees “Poppy is at Hannaford” and their list pops up.</p>
-      ${(state.stores || []).map(st => `<div class="setting"><span style="font-size:24px">${st.emoji}</span><div class="grow"><b>${esc(st.name)}</b><small>${esc(st.address || '')}</small></div><button class="btn btn-ghost btn-sm" data-store-del="${st.id}" aria-label="Remove ${attr(st.name)}">${icon('trash')}</button></div>`).join('') || '<p class="muted small">No stores saved yet.</p>'}
-      <div class="row" style="gap:8px;margin-top:10px"><button class="btn btn-brass grow" data-store-find>📍 Find stores near me</button><button class="btn btn-ghost" data-store-here>I'm at one</button></div>
-      <div data-store-results></div>
-      <div class="setting" style="border:0;padding-bottom:0"><div class="grow"><b>Tell the house when I'm at a store</b><small>Checks while the app is open on this phone</small></div><label class="toggle"><input type="checkbox" data-locshare ${sharing() ? 'checked' : ''}><i></i></label></div>
-    </div>
-
-    <div class="card pad" style="margin-bottom:14px" data-tour="sync">
-      <h3>☁️ Household sync</h3>
-      ${(() => { const si = syncInfo(); return si.code ? `
-        <p class="small muted" style="margin:4px 0 10px">Everyone with this code shares one kitchen. Changes sync automatically.</p>
-        <div class="row" style="gap:8px;margin-bottom:10px"><div class="input grow" style="display:flex;align-items:center;font:700 18px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em">${esc(si.code)}</div><button class="btn btn-ghost" data-sync-share>${icon('share')}</button></div>
-        <p class="small muted" style="margin:0 0 10px">${si.status === 'offline' ? '⚠️ Offline — will catch up when you’re back online.' : `✅ Synced ${si.last ? new Date(si.last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''} · version ${si.version}`}</p>
-        <div class="row" style="gap:8px"><button class="btn btn-wood wood-mid grow" data-sync-now>Sync now</button><button class="btn btn-ghost" data-sync-leave>Leave</button></div>` : `
-        <p class="small muted" style="margin:4px 0 10px">Share your kitchen with everyone in the house: start a household, then enter its code on the other phones.</p>
-        <div class="row" style="gap:8px;margin-bottom:8px"><input class="input grow" data-sync-name placeholder="Household name" value="Our Kitchen"><button class="btn btn-brass" data-sync-create>Start</button></div>
-        <div class="row" style="gap:8px"><input class="input grow" data-sync-code placeholder="XXXX-XXXX-XXXX-XXXX" style="text-transform:uppercase"><button class="btn btn-ghost" data-sync-join>Join</button></div>`; })()}
-    </div>
-
     ${window.LarderNative ? '' : `<div class="card pad" style="margin-bottom:14px">
       <h3 style="margin-bottom:6px">📱 Get the Android app</h3>
       <p class="small muted" style="margin:0 0 10px">Adds notifications, the home-screen widget, and better product search. Open the file once it downloads; Android may ask you to allow installs from your browser.</p>
       <a class="btn btn-brass btn-block" href="https://github.com/real-CAK3D/ShelfandStock/releases/latest/download/ShelfAndStock.apk">${icon('download')} Download the app</a>
     </div>`}
+    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.4 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance · Food recalls from <b>openFDA</b> · Shopper prices from <b>Open Prices</b>.</p>`;
+}
 
+function head(title, backTo) {
+  return `<div class="set-head"><button class="icon-btn" data-set-back aria-label="Back to ${attr(backTo)}">${icon('back')}</button><div class="grow"><small>${esc(backTo)}</small><h2>${title}</h2></div></div>`;
+}
+
+function storagePage() {
+  const rs = rooms();
+  if (zone) {
+    const z = state.zones.find(x => x.id === zone);
+    if (!z) { zone = null; return storagePage(); }
+    const r = rs.find(x => x.zones.includes(z.id));
+    return `${head(`${ZONE_KINDS[z.kind]?.emoji || '🗄️'} ${esc(z.name)}`, r ? r.label.replace(/^\S+\s/, '') : 'Your storage')}
+      <div class="card pad" style="margin-bottom:14px">
+        <label class="field"><span>Name</span><input class="input" value="${attr(z.name)}" data-zname="${z.id}" style="font-weight:600"></label>
+        <label class="field"><span>Type</span><select class="input" data-zkind="${z.id}">${Object.entries(ZONE_KINDS).map(([k, v]) => `<option value="${k}" ${z.kind === k ? 'selected' : ''}>${v.emoji} ${v.label}</option>`).join('')}</select></label>
+        <p class="small muted" style="margin:0">${plural(itemsIn(z), 'item')} stored here</p>
+      </div>
+      <div class="card pad" style="margin-bottom:14px">
+        <h3 style="margin-bottom:4px">Shelves &amp; sections</h3>
+        <div class="zone-edit" style="background:none;padding:0">
+          ${z.sections.map(sec => `<div class="sec"><input class="input" value="${attr(sec.name)}" data-sname="${z.id}|${sec.id}"><button class="btn btn-ghost btn-sm" data-sdel="${z.id}|${sec.id}" aria-label="Delete shelf">${icon('minus')}</button></div>`).join('')}
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:10px" data-sadd="${z.id}">${icon('plus')} Shelf / section</button>
+      </div>
+      <button class="btn btn-ghost btn-block" style="color:var(--tomato)" data-zdel="${z.id}">${icon('trash')} Delete this place</button>`;
+  }
+  if (room) {
+    const r = rs.find(x => x.id === room);
+    if (!r) { room = null; return storagePage(); }
+    return `${head(r.label, 'Your storage')}
+      <div class="card pad" style="margin-bottom:14px;padding-top:4px;padding-bottom:4px">
+        ${r.zones.map(id => state.zones.find(z => z.id === id)).filter(Boolean).map(z => row('zone', z.id, esc(z.name), `${z.sections.length} shel${z.sections.length === 1 ? 'f' : 'ves'} · ${plural(itemsIn(z), 'item')}`, `<span class="set-emo">${ZONE_KINDS[z.kind]?.emoji || '🗄️'}</span>`)).join('') || '<p class="muted small" style="padding:12px 4px">Nothing here yet.</p>'}
+      </div>
+      ${r.id === 'other' ? `<button class="btn btn-brass btn-block" data-addzone>${icon('plus')} Add a place</button>` : ''}`;
+  }
+  return `${head('🗄️ Your storage', 'Settings')}
+    <p class="small muted" style="margin:0 4px 12px">Rename cabinets and shelves to match your real kitchen. Pick a wall, then a cabinet.</p>
+    <div class="card pad" style="margin-bottom:14px;padding-top:4px;padding-bottom:4px">
+      ${rs.map(r => { const zs = r.zones.map(id => state.zones.find(z => z.id === id)).filter(Boolean); return row('room', r.id, esc(r.label), `${plural(zs.length, 'place')} · ${plural(zs.reduce((a, z) => a + itemsIn(z), 0), 'item')}`); }).join('')}
+    </div>
+    <button class="btn btn-ghost btn-block" data-addzone>${icon('plus')} Add a place</button>
+    <p class="small muted" style="margin:6px 4px 0;text-align:center">A basement shelf, bar cart, chest freezer… New places go under Other storage.</p>`;
+}
+
+function body(s) {
+  const wasted = state.history.filter(h => h.type === 'tossed');
+  const cooked = state.history.filter(h => h.type === 'cooked');
+  switch (page) {
+    case 'look': return `${head(PAGES.look, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="margin-bottom:14px">Wood finish</h3>
+      <div class="swatches" style="margin-bottom:22px">${WOODS.map(([n, a, b]) => `<button class="swatch ${s.wood === n ? 'on' : ''}" data-wood="${n}" style="background:var(--grain) 0 0/300px 150px, linear-gradient(135deg, ${a}, ${b});background-blend-mode:soft-light"><span>${cap(n)}</span></button>`).join('')}</div>
+      <div class="setting"><div class="grow"><b>Icon style</b><small>3D icons look the same on every phone</small></div>
+        <div class="seg" style="width:170px"><button data-iconstyle="fluent" class="${(s.icons || 'fluent') === 'fluent' ? 'on' : ''}" style="position:relative;z-index:1">3D 🍎</button><button data-iconstyle="native" class="${s.icons === 'native' ? 'on' : ''}" style="position:relative;z-index:1" data-noemo>Phone 🍎</button></div></div>
+      <div class="setting"><div class="grow"><b>Cabinet doors</b><small>How cabinets look in the kitchen scene</small></div>
+        <div class="seg" style="width:170px"><button data-cab="painted" class="${s.cabinets !== 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Painted</button><button data-cab="wood" class="${s.cabinets === 'wood' ? 'on' : ''}" style="position:relative;z-index:1">Wood</button></div></div>
+      <div class="setting" style="border:0"><div class="grow"><b>Haptics</b><small>Little buzzes when you tap</small></div><label class="toggle"><input type="checkbox" data-hap ${s.haptics ? 'checked' : ''}><i></i></label></div>
+    </div>
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="margin-bottom:4px">🎉 Holiday themes</h3>
+      <p class="small muted" style="margin:0 0 10px">A little seasonal pizazz: colors, drifting decorations and a garland on top. Auto follows the calendar.</p>
+      <div class="row wrap" style="gap:6px">${[['auto', '✨ Auto'], ['off', 'Off'], ...Object.entries(SEASONS).map(([k, v]) => [k, `${v.emoji} ${v.name}`])].map(([k, l]) => `<button class="chip ${(s.season || 'auto') === k ? 'on' : ''}" data-season="${k}">${l}</button>`).join('')}</div>
+    </div>`;
+
+    case 'cooking': return `${head(PAGES.cooking, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px">
+      <div class="setting"><div class="grow"><b>Household size</b><small>Default servings when planning</small></div><div class="stepper" style="height:38px"><button data-hh="-1">−</button><input value="${s.household}" readonly style="width:40px"><button data-hh="1">+</button></div></div>
+      <div class="setting" style="border:0"><div class="grow"><b>“Use soon” warning</b><small>Flag items this many days before their date</small></div><div class="stepper" style="height:38px"><button data-wd="-1">−</button><input value="${s.expiryWarnDays}" readonly style="width:40px"><button data-wd="1">+</button></div></div>
+    </div>
+    <div class="card pad" style="margin-bottom:14px">
+      <h3>Always-on-hand staples</h3>
+      <p class="small muted" style="margin:4px 0 10px">Recipes treat these as stocked even if you don't track them.</p>
+      <div class="row wrap" style="gap:6px" data-staples>${s.stapleIds.map(id => `<button class="chip on" data-unstaple="${id}">${FOOD_BY_ID[id]?.emoji || ''} ${esc(FOOD_BY_ID[id]?.name || id)} ✕</button>`).join('')}</div>
+      <input class="input" style="margin-top:10px" placeholder="Add a staple (e.g. sugar)…" data-staple list="staple-dl"><datalist id="staple-dl"></datalist>
+    </div>`;
+
+    case 'storage': return storagePage();
+
+    case 'report': return `${head(PAGES.report, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between"><h3>Totals</h3><button class="btn btn-ghost btn-sm" data-week>📊 This week</button></div>
+      <div class="kv"><div><small>Items tracked</small><b>${state.items.length}</b></div><div><small>Meals cooked</small><b>${cooked.length}</b></div><div><small>Tossed (waste)</small><b>${wasted.length}</b></div><div><small>Recipes saved</small><b>${state.recipes.length}</b></div></div>
+      ${wasted.length ? `<p class="small muted">Most tossed: ${esc(Object.entries(wasted.reduce((a, h) => (a[h.name] = (a[h.name] || 0) + 1, a), {})).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, c]) => `${n} (${c})`).join(', '))}</p>` : ''}
+    </div>`;
+
+    case 'people': return `${head(PAGES.people, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px">
+      <div class="row" style="justify-content:flex-end;margin-bottom:6px"><button class="btn btn-ghost btn-sm" data-person-add>${icon('plus')} Add someone</button></div>
+      ${(state.members || []).map(m => `<div class="setting">${avatar(m, 40)}<div class="grow"><b>${esc(m.name)}${m.id === me()?.id ? ' <span class="pill ok">you</span>' : ''}</b><small>${m.mustReset ? 'Hasn’t set a PIN yet (0000)' : 'PIN set'}</small></div><button class="btn btn-ghost btn-sm" data-pin-reset="${m.id}">Reset PIN</button>${m.id !== me()?.id ? `<button class="btn btn-ghost btn-sm" data-person-del="${m.id}" aria-label="Remove ${attr(m.name)}">${icon('trash')}</button>` : ''}</div>`).join('')}
+      <p class="small muted" style="margin:8px 0 0">Reset sets a PIN back to 0000; they choose a new one next time they sign in. Change your own icon by tapping your picture at the top.</p>
+    </div>`;
+
+    case 'notify': return `${head(PAGES.notify, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px" data-tour="notify">
+      <p class="small muted" style="margin:0 0 6px">${window.LarderNative?.configureNotices ? 'Shows up on this phone even when the app is closed (checks about every 15 minutes). Needs Household sync.' : 'Notifications when the app is closed work in the Android app. Here, things show up live while the app is open.'}</p>
+      ${Object.entries(NOTIFY_KINDS).map(([k, l]) => `<div class="setting" style="padding:10px 4px"><div class="grow"><b style="font-weight:600">${l}</b></div><label class="toggle"><input type="checkbox" data-nk="${k}" ${notifyPrefs()[k] ? 'checked' : ''}><i></i></label></div>`).join('')}
+      ${window.LarderNative?.requestNotifications ? '<button class="btn btn-ghost btn-sm" data-nperm style="margin-top:8px">Allow notifications on this phone</button>' : ''}
+    </div>`;
+
+    case 'stores': return `${head(PAGES.stores, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px" data-tour="stores">
+      <p class="small muted" style="margin:0 0 10px">Save the stores you use. When someone is at one, the house sees “Poppy is at Hannaford” and their list pops up.</p>
+      ${(state.stores || []).map(st => `<div class="setting"><span style="font-size:24px">${st.emoji}</span><div class="grow"><b>${esc(st.name)}</b><small>${esc(st.address || '')}</small></div><button class="btn btn-ghost btn-sm" data-store-del="${st.id}" aria-label="Remove ${attr(st.name)}">${icon('trash')}</button></div>`).join('') || '<p class="muted small">No stores saved yet.</p>'}
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn btn-brass grow" data-store-find>📍 Find stores near me</button><button class="btn btn-ghost" data-store-here>I'm at one</button></div>
+      <div data-store-results></div>
+      <div class="setting" style="border:0;padding-bottom:0"><div class="grow"><b>Tell the house when I'm at a store</b><small>Checks while the app is open on this phone</small></div><label class="toggle"><input type="checkbox" data-locshare ${sharing() ? 'checked' : ''}><i></i></label></div>
+    </div>`;
+
+    case 'sync': return `${head(PAGES.sync, 'Settings')}
+    <div class="card pad" style="margin-bottom:14px" data-tour="sync">
+      ${(() => { const si = syncInfo(); return si.code ? `
+        <p class="small muted" style="margin:0 0 10px">Everyone with this code shares one kitchen. Changes sync automatically.</p>
+        <div class="row" style="gap:8px;margin-bottom:10px"><div class="input grow" style="display:flex;align-items:center;font:700 18px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em">${esc(si.code)}</div><button class="btn btn-ghost" data-sync-share>${icon('share')}</button></div>
+        <p class="small muted" style="margin:0 0 10px">${si.status === 'offline' ? '⚠️ Offline — will catch up when you’re back online.' : `✅ Synced ${si.last ? new Date(si.last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''} · version ${si.version}`}</p>
+        <div class="row" style="gap:8px"><button class="btn btn-wood wood-mid grow" data-sync-now>Sync now</button><button class="btn btn-ghost" data-sync-leave>Leave</button></div>` : `
+        <p class="small muted" style="margin:0 0 10px">Share your kitchen with everyone in the house: start a household, then enter its code on the other phones.</p>
+        <div class="row" style="gap:8px;margin-bottom:8px"><input class="input grow" data-sync-name placeholder="Household name" value="Our Kitchen"><button class="btn btn-brass" data-sync-create>Start</button></div>
+        <div class="row" style="gap:8px"><input class="input grow" data-sync-code placeholder="XXXX-XXXX-XXXX-XXXX" style="text-transform:uppercase"><button class="btn btn-ghost" data-sync-join>Join</button></div>`; })()}
+    </div>`;
+
+    case 'data': return `${head(PAGES.data, 'Settings')}
     <div class="card pad" style="margin-bottom:14px">
       <h3 style="margin-bottom:10px">Backup</h3>
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow" data-export>${icon('download')} Export</button><label class="btn btn-ghost grow">${icon('upload')} Import<input type="file" accept="application/json,.json" data-import hidden></label></div>
       <p class="small muted">Everything lives on this phone. Export a backup file to move to a new phone or share with your household.</p>
     </div>
-
     <div class="card pad" style="margin-bottom:14px">
       <button class="btn btn-wood wood-mid btn-block" data-tour-again>🧭 Replay the walkthrough</button>
       <div class="spacer"></div>
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow btn-sm" data-sample>Load sample kitchen</button><button class="btn btn-danger grow btn-sm" data-wipe>Start over</button></div>
       <p class="small muted" style="margin:8px 0 0">Start over empties the kitchen and brings back the welcome screen, where you can pick an empty kitchen. People and PINs stay.</p>
-    </div>
+    </div>`;
 
-    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.3 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance.</p>
-  </div>`;
+    default: page = ''; return home(s);
+  }
+}
+
+export function render(root, params = {}) {
+  const s = state.settings;
+  // coming from another tab starts at the menu, unless a page was asked for
+  if (params.page !== undefined || !root.querySelector('.settings-page')) { page = params.page || ''; room = null; zone = null; }
+  host = root;
+  root.innerHTML = `<div class="pad settings-page">${page ? body(s) : home(s)}</div>`;
 
   root.onclick = async e => {
+    const nav = e.target.closest('[data-page],[data-room],[data-zone],[data-set-back]');
+    if (nav) {
+      haptic();
+      if (nav.dataset.setBack !== undefined) return back();
+      if (nav.dataset.page) page = nav.dataset.page; else if (nav.dataset.room) room = nav.dataset.room; else zone = nav.dataset.zone;
+      render(root); root.scrollTop = 0; root.firstElementChild.classList.add('set-enter'); return;
+    }
     const w = e.target.closest('.swatch[data-wood]'); /* <html> also carries data-wood */ if (w) { update(s => { s.settings.wood = w.dataset.wood; }, 'wood'); document.documentElement.dataset.wood = w.dataset.wood; haptic(); return; }
     const sdel = e.target.closest('[data-store-del]'); if (sdel) { removeStore(sdel.dataset.storeDel); return; }
     if (e.target.closest('[data-store-find]')) {
@@ -177,11 +271,11 @@ export function render(root) {
     const hh = e.target.closest('[data-hh]'); if (hh) return update(s => { s.settings.household = Math.max(1, s.settings.household + Number(hh.dataset.hh)); });
     const wd = e.target.closest('[data-wd]'); if (wd) return update(s => { s.settings.expiryWarnDays = Math.max(0, s.settings.expiryWarnDays + Number(wd.dataset.wd)); });
     const us = e.target.closest('[data-unstaple]'); if (us) return update(s => { s.settings.stapleIds = s.settings.stapleIds.filter(x => x !== us.dataset.unstaple); });
-    if (e.target.closest('[data-addzone]')) { update(s => { s.zones.push({ id: 'z-' + uid(), name: 'New storage', kind: 'other', slot: 'custom', sections: [{ id: 's-' + uid(), name: 'Shelf 1' }] }); }); toast('Added — give it a name below', { icon: '🧰' }); return; }
+    if (e.target.closest('[data-addzone]')) { const id = 'z-' + uid(); room = 'other'; zone = id; update(s => { s.zones.push({ id, name: 'New storage', kind: 'other', slot: 'custom', sections: [{ id: 's-' + uid(), name: 'Shelf 1' }] }); }); root.scrollTop = 0; toast('Added — give it a name', { icon: '🧰' }); return; }
     const zd = e.target.closest('[data-zdel]');
     if (zd) {
       const z = state.zones.find(x => x.id === zd.dataset.zdel), n = state.items.filter(i => z.sections.some(s => s.id === i.sectionId)).length;
-      if (await confirmBox(`Delete “${z.name}”?${n ? ` Its ${n} items move to the first remaining shelf.` : ''}`, { ok: 'Delete', danger: true })) update(s => { s.zones = s.zones.filter(x => x.id !== z.id); const fallback = s.zones[0]?.sections[0]?.id; s.items.forEach(i => { if (z.sections.some(sec => sec.id === i.sectionId)) i.sectionId = fallback; }); });
+      if (await confirmBox(`Delete “${z.name}”?${n ? ` Its ${n} items move to the first remaining shelf.` : ''}`, { ok: 'Delete', danger: true })) { zone = null; update(s => { s.zones = s.zones.filter(x => x.id !== z.id); const fallback = s.zones[0]?.sections[0]?.id; s.items.forEach(i => { if (z.sections.some(sec => sec.id === i.sectionId)) i.sectionId = fallback; }); }); }
       return;
     }
     const sa = e.target.closest('[data-sadd]'); if (sa) return update(s => { s.zones.find(z => z.id === sa.dataset.sadd).sections.push({ id: 's-' + uid(), name: 'New shelf' }); });
@@ -209,7 +303,7 @@ export function render(root) {
     if (t.dataset.import !== undefined && t.files[0]) importData(t.files[0]);
   };
   const st = $('[data-staple]', root);
-  st.oninput = () => { $('#staple-dl', root).innerHTML = searchFoods(st.value, 6).map(f => `<option value="${attr(f.name)}">`).join(''); };
+  if (st) st.oninput = () => { $('#staple-dl', root).innerHTML = searchFoods(st.value, 6).map(f => `<option value="${attr(f.name)}">`).join(''); };
 }
 
 function exportData() {

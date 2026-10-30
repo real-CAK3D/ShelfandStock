@@ -56,4 +56,4 @@ Produces `dist/ShelfAndStock-<version>.apk`. The APK serves `www/` from inside t
 
 ## Data sources
 
-Product labels & nutrition: [Open Food Facts](https://world.openfoodfacts.org) (ODbL) · Online recipes: [TheMealDB](https://www.themealdb.com) · Storage times adapted from USDA FoodKeeper guidance.
+Product labels & nutrition: [Open Food Facts](https://world.openfoodfacts.org) (ODbL) · Online recipes: [TheMealDB](https://www.themealdb.com) · Storage times adapted from USDA FoodKeeper guidance · Food recalls: [openFDA](https://open.fda.gov) (public domain) · Shopper-reported prices: [Open Prices](https://prices.openfoodfacts.org) (ODbL) · 3D icons: [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (MIT).

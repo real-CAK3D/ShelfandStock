@@ -8,6 +8,7 @@ import { actions } from '../router.js';
 import { holidaysFor } from '../data/holidays.js';
 import { activityHTML, tripBannerHTML, tripDetail, liveStripHTML } from '../ui/house.js';
 import { weekCardHTML, reportSheet } from '../ui/report.js';
+import { recallMatches, recallSheet } from '../services/recalls.js';
 
 // ---------- the rooms (swipe pages) ----------
 // Boxes are [left, top, width, height] in % of the wall. Swiping right from the stove wall
@@ -56,10 +57,11 @@ const ROOMS = [
     Z('drawer-c', 2, 57, 30, 6.5, { type: 'drawer' }), Z('base-big', 2, 64.5, 30, 23.5),
     D('floor', 0, 88, 100, 12),
     // Clyde's spot on the floor: water bowl, food bowl (his food), bone (his treats)
-    D('clyde-mat', 2, 90.5, 38, 8, '<span>CLYDE</span>'),
-    D('water-bowl', 4, 91.5, 10, 5.5, '<i></i>'),
-    Z('clyde', 15.5, 90.8, 11, 6.5, { type: 'bowl' }),
-    Z('clyde-treats', 28, 91, 10, 6, { type: 'bone' }),
+    // centered under the gap between the big base cabinet and the island
+    D('clyde-mat', 18, 90.5, 38, 8, '<span>CLYDE</span>'),
+    D('water-bowl', 20, 91.5, 10, 5.5, '<i></i>'),
+    Z('clyde', 31.5, 90.8, 11, 6.5, { type: 'bowl' }),
+    Z('clyde-treats', 44, 91, 10, 6, { type: 'bone' }),
     D('island-top', 40, 63, 58, 5), Z('island', 43, 68, 52, 21, { finish: 'espresso' }),
   ] },
 ];
@@ -67,6 +69,8 @@ const HOME_ROOM = 1;
 let room = HOME_ROOM; // kept across re-renders
 export const showRoom = n => { room = n; };
 export const roomOfZone = zoneId => ROOMS.findIndex(r => r.parts.some(p => p.zone === zoneId));
+// the walls in kitchen order (stove first, garage last), for grouping storage in Settings
+export const roomList = () => [...ROOMS.slice(HOME_ROOM), ...ROOMS.slice(0, HOME_ROOM)].map(r => ({ id: r.id, label: r.label, zones: r.parts.filter(p => p.zone).map(p => p.zone) }));
 const DRAWN = new Set(ROOMS.flatMap(r => r.parts.map(p => p.zone).filter(Boolean)));
 const itemsIn = zoneId => { const z = state.zones.find(z => z.id === zoneId); if (!z) return []; const ids = new Set(z.sections.map(s => s.id)); return state.items.filter(i => ids.has(i.sectionId)); };
 
@@ -132,13 +136,14 @@ export function render(root) {
     <div class="hero-greet"><h2>${greeting()} 👋</h2><p>${items.length ? `${items.length} things in your kitchen · ${cookable} recipes you can make right now` : 'Your kitchen is empty — tap ＋ to stock it.'}</p></div>
 
     ${tripBannerHTML()}
+    ${(() => { const m = recallMatches(); return m.length ? `<button class="recall-banner" data-recalls>🛡️ <span><b>${m.length} possible recall${m.length > 1 ? 's' : ''}</b> for something in your house. Tap to check the label.</span></button>` : ''; })()}
     <div data-live>${liveStripHTML()}</div>
     <div class="room-tabs">${ROOMS.map((r, i) => `<button class="room-tab ${room === i ? 'on' : ''}" data-room="${i}" ${r.id === 'garage' ? 'data-tour="garage-tab"' : ''}>${r.label} <span class="n">${roomCount(r)}</span></button>`).join('')}</div>
     <div class="rooms" data-rooms data-tour="scene">
       ${ROOMS.map(r => `<div class="room"><div class="wall wall-${r.wall || 'paint'}">${r.parts.map(part).join('')}</div></div>`).join('')}
     </div>
     <div class="room-dots">${ROOMS.map((r, i) => `<i class="${room === i ? 'on' : ''}"></i>`).join('')}</div>
-    <p class="small muted" style="text-align:center;margin:4px 0 0">Swipe to walk around · swipe right for the garage</p>
+    <p class="small muted" style="text-align:center;margin:4px 0 0">Swipe to walk around the kitchen</p>
 
     <div class="storage-row">
       ${has('holiday') ? `<button class="chest wood-mid" data-zone="holiday" data-tour="holiday"><h4>${esc(zoneName('holiday'))}</h4><p>${itemsIn('holiday').length} items${nextHol ? ` · ${nextHol.emoji} ${esc(nextHol.name)} in ${Math.max(0, Math.round((new Date(nextHol.iso + 'T12:00') - new Date()) / 864e5))}d` : ''}</p><span class="big">🎁</span></button>` : ''}
@@ -185,6 +190,7 @@ export function render(root) {
   }
   root.onclick = e => {
     if (e.target.closest('[data-week]')) return reportSheet();
+    if (e.target.closest('[data-recalls]')) return recallSheet();
     const tr = e.target.closest('[data-trip]'); if (tr) return tripDetail(tr.dataset.trip, () => actions.go('list'));
     const rt = e.target.closest('[data-room]');
     if (rt) { room = Number(rt.dataset.room); haptic(); return rooms.scrollTo({ left: room * rooms.clientWidth, behavior: 'smooth' }); }

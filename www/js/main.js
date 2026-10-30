@@ -6,13 +6,14 @@ import { $, $$, esc, icon, openSheet, closeSheet, sheetOpen, haptic, toast, flyT
 import { showItem, addFlow, crumb } from './ui/itemSheet.js';
 import { register, actions } from './router.js';
 import { welcome, tour } from './ui/tour.js';
-import { toggleHelp } from './ui/help.js';
+import { toggleHelp, helpOn, exitHelp } from './ui/help.js';
 import { startSync } from './services/sync.js';
 import { me, seedMembers, signOut, setPin, avatar, AVATARS, resetPin } from './services/people.js';
 import { loginScreen } from './ui/login.js';
 import { startSeasons } from './ui/seasons.js';
 import { startEmoji } from './ui/emoji.js';
 import { startNotify, notifyHouse } from './services/notify.js';
+import { refreshRecalls, onRecalls } from './services/recalls.js';
 import { startLive, onLive, setDoing, announce, reconnectLive } from './services/live.js';
 import { startStoreWatch, onHere } from './services/stores.js';
 import { liveStripHTML, liveSheet, line } from './ui/house.js';
@@ -180,8 +181,10 @@ window.larder = actions;
 // Hardware back (Android wrapper calls this; returns true if something was closed).
 window.larderBack = () => {
   if (document.querySelector('.welcome, .tour-tip')) return true;
+  if (helpOn()) { exitHelp(); return true; }
   if (sheetOpen()) { closeSheet(); return true; }
   const ins = document.querySelector('.inside'); if (ins) { ins._close?.(); return true; }
+  if (current === 'settings' && settings.back()) return true;
   if (current !== 'kitchen') { go('kitchen'); return true; }
   return false;
 };
@@ -238,7 +241,17 @@ function profileSheet() {
 
 // ---------- boot ----------
 (async () => {
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {
+    // when a new version takes over, reload once so the new code runs instead of the old copy already on screen
+    const had = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
+  }
   go('kitchen', {}, { animate: false });
+  // food recall alerts: redraw the kitchen or list when fresh recalls arrive
+  onRecalls(() => { if (current === 'kitchen' || current === 'list') { const y = view.scrollTop; VIEWS[current].render(view, {}); view.scrollTop = y; } });
+  refreshRecalls();
   startSync();
   startEmoji();
   startSeasons();
@@ -254,11 +267,4 @@ function profileSheet() {
   paintMe();
   startLive();
   startNotify();
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {
-    // when a new version takes over, reload once so the new code runs instead of the old copy already on screen
-    const had = !!navigator.serviceWorker.controller;
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !reloaded) { reloaded = true; location.reload(); } });
-    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
-  }
 })();

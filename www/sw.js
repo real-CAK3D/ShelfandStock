@@ -1,10 +1,10 @@
 // Offline-first service worker for the hosted/PWA build (the Android APK bundles files directly).
-const CACHE = 'shelfstock-v6';
+const CACHE = 'shelfstock-v7';
 const CORE = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/main.js', 'js/store.js', 'js/router.js', 'js/data/foods.js', 'js/data/recipes.js', 'js/data/holidays.js', 'js/data/layout.js',
   'js/ui/dom.js', 'js/ui/itemSheet.js', 'js/ui/label.js', 'js/ui/tour.js', 'js/ui/help.js', 'vendor/zxing.min.js', 'js/services/off.js', 'js/services/mealdb.js', 'js/services/sync.js', 'js/services/people.js', 'js/services/vision.js', 'js/services/live.js', 'js/services/stores.js', 'js/services/ocr.js', 'js/services/notify.js',
   'js/ui/emoji.js', 'js/ui/receipt.js', 'js/ui/report.js', 'vendor/emoji/index.js',
-  'js/ui/login.js', 'js/ui/loader.js', 'js/ui/seasons.js', 'js/ui/house.js', 'icons/icon-512.png',
+  'js/services/recalls.js', 'js/services/openprices.js', 'js/ui/unitprice.js', 'js/data/inseason.js', 'js/ui/login.js', 'js/ui/loader.js', 'js/ui/seasons.js', 'js/ui/house.js', 'icons/icon-512.png',
   'js/views/kitchen.js', 'js/views/stock.js', 'js/views/recipes.js', 'js/views/plan.js', 'js/views/list.js', 'js/views/settings.js',
   'fonts/fraunces-latin-400-normal.woff2', 'fonts/fraunces-latin-600-normal.woff2', 'fonts/fraunces-latin-700-normal.woff2',
   'fonts/inter-latin-400-normal.woff2', 'fonts/inter-latin-500-normal.woff2', 'fonts/inter-latin-600-normal.woff2', 'fonts/inter-latin-700-normal.woff2'];

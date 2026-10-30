@@ -1,5 +1,6 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
+import { openPrices } from '../services/openprices.js';
 import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money } from '../store.js';
 import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
@@ -54,6 +55,7 @@ export function showItem(id) {
       ${it.tags?.length ? `<div class="row wrap" style="gap:6px;margin-bottom:8px">${it.tags.map(t => `<span class="pill">#${esc(t)}</span>`).join('')}</div>` : ''}
       ${it.notes ? `<p style="margin:6px 0 10px;color:var(--ink-2)">📝 ${esc(it.notes)}</p>` : ''}
       ${(() => { const pi = priceInfo(it.foodId, it.name); return pi.byStore.length ? `<div class="group-h">Prices<span class="line"></span></div><div class="prices">${pi.byStore.map((p, i) => `<div class="p ${i === 0 && pi.byStore.length > 1 ? 'best' : ''}"><span>${esc(p.store)}${i === 0 && pi.byStore.length > 1 ? ' · cheapest' : ''}</span><b>${money(p.price)}</b></div>`).join('')}</div>` : ''; })()}
+      ${it.barcode ? '<div data-openprices></div>' : ''}
       ${tipFor(it)}
       ${it.off ? `<h3 style="margin:16px 0 4px">Label</h3>${productBadges(it.off)}${nutritionLabel(it.off)}` : ''}
       ${uses.length ? `<h3 style="margin:16px 0 8px">Cook with it</h3><div class="stagger">${uses.map(r => { const m = recipeMatch(r); return `<button class="irow" style="width:100%;text-align:left" data-r="${r.id}"><span class="em">${r.emoji}</span><span class="t"><b>${esc(r.title)}</b><small>${m.have}/${m.total} ingredients on hand</small></span>${icon('next')}</button>`; }).join('')}</div>` : ''}
@@ -81,6 +83,8 @@ export function showItem(id) {
       b.querySelector('[data-a=date]').onclick = () => { close(); dateSheet(it.id, null, { after: () => showItem(it.id) }); };
       b.querySelectorAll('[data-bdate]').forEach(btn => btn.onclick = () => { close(); dateSheet(it.id, btn.dataset.bdate, { after: () => showItem(it.id) }); });
       b.querySelectorAll('[data-bdel]').forEach(btn => btn.onclick = () => { removeBatch(it.id, btn.dataset.bdel); close(); haptic(); toast('Batch removed'); showItem(it.id); });
+      const op = b.querySelector('[data-openprices]');
+      if (op) openPrices(it.barcode).then(ps => { if (ps.length) op.innerHTML = `<div class="group-h">Prices others reported<span class="line"></span></div><div class="prices">${ps.map(p => `<div class="p"><span>${esc(p.store)}${p.city ? ` · ${esc(p.city)}` : ''}<small style="display:block;color:var(--ink-3);font-size:11px">${p.date ? fmtDate(p.date) : ''}</small></span><b>${money(p.price)}</b></div>`).join('')}</div><p class="small muted" style="margin:4px 2px 8px">From Open Prices, shared by shoppers.</p>`; });
     },
   });
   return sheet;

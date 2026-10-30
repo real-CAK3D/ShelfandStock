@@ -84,6 +84,14 @@ const HELP = [
   ['.lrow', '🧾 List item', 'The note underneath explains why it’s here, like a planned recipe or running low.'],
 
   ['[data-tour=sync]', '☁️ Household sync', 'Start a household on one phone, then enter its code on the others. Everyone shares one kitchen, list and calendar, and changes sync automatically. It keeps working offline and catches up later.'],
+  ['[data-recalls]', '🛡️ Food recalls', 'Checks the FDA’s public list of US food recalls from the last 90 days against what’s in your kitchen and on your list. A barcode match is that exact product; a brand match means check the lot code on your package.'],
+  ['[data-unitprice]', '⚖️ Which is cheaper?', 'Type the price and size from two shelf tags and it tells you which is cheaper per ounce, fluid ounce or count, even across units like lb vs oz.'],
+  ['[data-season-add]', '🌱 In season', 'Produce that’s in season this month, so it’s usually cheaper and tastier. Tap to add it to the list.'],
+  ['[data-openprices]', '🏷️ Prices others reported', 'Prices other shoppers shared for this exact barcode through Open Prices, a free open database from Open Food Facts.'],
+  ['[data-set-back]', '◀ Back', 'Goes back one step in Settings. The phone’s back button does the same.'],
+  ['[data-room]', '🧱 A wall of the kitchen', 'Every cabinet, drawer and appliance on that wall. Tap to pick one and rename it or its shelves.'],
+  ['[data-zone]', '🗄️ A storage place', 'Tap to rename it, change its type, add or remove shelves, or delete it.'],
+  ['.set-row', '⚙️ Settings section', 'Tap to open it. The line underneath shows what it’s set to right now.'],
   ['.fr-door', '🚪 Door bins', 'The bins on the inside of each fridge door: dressings and syrups on the left, condiments, jams, milk and juice on the right.'],
 
   // sheets
@@ -105,7 +113,7 @@ const VIEW_HELP = {
   recipes: ['🍳 Recipes', 'Find something to cook with what you have.'],
   plan: ['📅 Plan', 'Meals, gatherings and holidays on a calendar.'],
   list: ['🛒 Shopping list', 'What to buy. Check things off in the store, then put them away at home.'],
-  settings: ['⚙️ Settings', 'Make Shelf & Stock match your real kitchen.'],
+  settings: ['⚙️ Settings', 'Make Shelf & Stock match your real kitchen. Pick a section to open it.'],
 };
 
 let on = false, banner, bubble, lit;
@@ -128,7 +136,9 @@ function enterHelp(currentView) {
   enterHelp.view = currentView;
 }
 
-function exitHelp() {
+export const helpOn = () => on;
+
+export function exitHelp() {
   on = false;
   document.body.classList.remove('help-mode');
   document.removeEventListener('click', intercept, true);
@@ -138,6 +148,7 @@ function exitHelp() {
 
 function intercept(e) {
   if (e.target.closest('.help-banner')) return;
+  if (e.target.closest('[data-act=help]')) { e.preventDefault(); e.stopPropagation(); return exitHelp(); } // ? again = done
   if (e.target.closest('.help-bubble')) { if (e.target.closest('[data-gotit]')) { bubble.remove(); lit?.classList.remove('help-lit'); } return; }
   e.preventDefault(); e.stopPropagation();
   for (const [sel, title, body] of HELP) {

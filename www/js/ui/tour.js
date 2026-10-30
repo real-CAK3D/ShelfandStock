@@ -79,6 +79,7 @@ export async function tour() {
   const end = () => { blocker.remove(); hole.remove(); tip.remove(); update(s => { s.settings.tourDone = true; }, 'tour'); actions.go('kitchen'); };
   const step = async () => {
     const s = STEPS[i];
+    tip.querySelectorAll('button').forEach(b => { b.disabled = true; }); // a second tap while moving would skip a step
     if (actions.current() !== s.view) { actions.go(s.view); await new Promise(r => setTimeout(r, 380)); }
     const target = s.sel && document.querySelector(s.sel);
     if (target) {
