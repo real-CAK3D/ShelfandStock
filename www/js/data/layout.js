@@ -18,8 +18,8 @@ export const ZONE_KINDS = {
 const shelves = (p, names) => names.map((name, i) => ({ id: `${p}-${i + 1}`, name }));
 
 export const PANTRY_SECTIONS = [
-  { id: 'pa-1', name: 'Top Shelf · Bags' }, { id: 'pa-2', name: 'Shelf 2 · Pull-out Tray' }, { id: 'pa-3', name: 'Shelf 3 · Pull-out Tray' },
-  { id: 'pa-4', name: 'Shelf 4 · Pull-out Tray' }, { id: 'pa-5', name: 'Floor · Pots & Bins' },
+  { id: 'pa-1', name: 'Top Drawer' }, { id: 'pa-2', name: 'Drawer 2' }, { id: 'pa-3', name: 'Drawer 3' },
+  { id: 'pa-4', name: 'Drawer 4' }, { id: 'pa-5', name: 'Floor · Pots & Bins' },
 ];
 
 export const DEFAULT_ZONES = [
@@ -36,8 +36,8 @@ export const DEFAULT_ZONES = [
   { id: 'freezer', name: 'Freezer Drawer', kind: 'freezer', slot: 'freezer', sections: [
     { id: 'fz-tray', name: 'Top Slide-out Tray' }, { id: 'fz-bin', name: 'Bottom Basket' },
   ] },
-  { id: 'above-fridge-l', name: 'Above Fridge · Left', short: 'Above L', kind: 'cabinet', slot: 'above-fridge-l', sections: shelves('afl', ['Shelf']) },
-  { id: 'above-fridge-r', name: 'Above Fridge · Right', short: 'Above R', kind: 'cabinet', slot: 'above-fridge-r', sections: shelves('afr', ['Shelf']) },
+  { id: 'above-fridge-l', name: 'Above Fridge · Left', short: 'Above L', kind: 'cabinet', slot: 'above-fridge-l', sections: shelves('afl', ['Top Shelf', 'Bottom Shelf']) },
+  { id: 'above-fridge-r', name: 'Above Fridge · Right', short: 'Above R', kind: 'cabinet', slot: 'above-fridge-r', sections: shelves('afr', ['Top Shelf', 'Bottom Shelf']) },
   { id: 'above-micro-l', name: 'Above Microwave · Left', short: 'Left', kind: 'cabinet', slot: 'above-micro-l', sections: shelves('aml', ['Top Shelf', 'Bottom Shelf']) },
   { id: 'above-micro-r', name: 'Above Microwave · Right', short: 'Right', kind: 'cabinet', slot: 'above-micro-r', sections: shelves('amr', ['Top Shelf', 'Bottom Shelf']) },
   { id: 'stove-drawer', name: 'Stove Drawer', short: 'Drawer', kind: 'drawer', slot: 'stove-drawer', sections: shelves('sd', ['Pans & Sheets']) },
@@ -46,25 +46,27 @@ export const DEFAULT_ZONES = [
     { id: 'ct-spice', name: 'Spice Rack' }, { id: 'ct-oil', name: 'Oils & Knife Block' },
   ] },
   // ---- sink wall ----
+  // both sides under the sink are wide open, no shelves
   { id: 'sink-base', name: 'Under the Sink', short: 'Under Sink', kind: 'cabinet', slot: 'sink-base', sections: [
-    { id: 'sink-1', name: 'Cleaning Supplies' }, { id: 'sink-2', name: 'Trash Bags & Sponges' },
+    { id: 'sink-1', name: 'Left Side' }, { id: 'sink-2', name: 'Right Side' },
   ] },
   { id: 'skinny-l', name: 'Skinny Upper · Left', short: 'Mugs', kind: 'cabinet', slot: 'skinny-l', sections: shelves('skl', ['Top Shelf', 'Middle Shelf', 'Bottom Shelf']) },
   { id: 'skinny-r', name: 'Skinny Upper · Right', short: 'Snacks', kind: 'cabinet', slot: 'skinny-r', sections: shelves('skr', ['Top Shelf', 'Middle Shelf', 'Bottom Shelf']) },
   { id: 'drawer-l', name: 'Drawer · Left of Pair', short: '', kind: 'drawer', slot: 'drawer-l', sections: shelves('drl', ['Wraps, Foil & Bags']) },
   { id: 'drawer-r', name: 'Drawer · Right of Pair', short: '', kind: 'drawer', slot: 'drawer-r', sections: shelves('drr', ['Utensils & Gadgets']) },
-  { id: 'base-l', name: 'Base Cabinet · Left', short: 'Base L', kind: 'cabinet', slot: 'base-l', sections: shelves('bl', ['Shelf', 'Floor']) },
-  { id: 'base-r', name: 'Base Cabinet · Right', short: 'Base R', kind: 'cabinet', slot: 'base-r', sections: shelves('br', ['Shelf', 'Floor']) },
+  { id: 'base-l', name: 'Base Cabinet · Left', short: 'Base L', kind: 'cabinet', slot: 'base-l', sections: shelves('bl', ['Top Shelf', 'Bottom']) },
+  { id: 'base-r', name: 'Base Cabinet · Right', short: 'Base R', kind: 'cabinet', slot: 'base-r', sections: shelves('br', ['Top Shelf', 'Bottom']) },
   // ---- corner & island ----
   { id: 'corner-up', name: 'Tall Corner Cabinet', short: 'Corner', kind: 'cabinet', slot: 'corner-up', sections: shelves('cu', ['Top Shelf', 'Middle Shelf', 'Bottom Shelf']) },
-  { id: 'corner-small', name: 'Small Corner Cabinet', short: 'Small', kind: 'cabinet', slot: 'corner-small', sections: shelves('cs', ['Coffee & Filters']) },
+  { id: 'corner-small', name: 'Small Corner Cabinet', short: 'Small', kind: 'cabinet', slot: 'corner-small', sections: shelves('cs', ['Top Shelf', 'Bottom Shelf']) },
   { id: 'counter', name: 'Coffee Corner', short: 'Counter', kind: 'counter', slot: 'counter', sections: [
     { id: 'ct-coffee', name: 'Coffee Station' }, { id: 'ct-bread', name: 'Bread Box' }, { id: 'ct-fruit', name: 'Fruit Bowl' },
   ] },
   { id: 'big-l', name: 'Big Upper · Left', short: 'Canned', kind: 'cabinet', slot: 'big-l', sections: shelves('bgl', ['Top Shelf', 'Middle Shelf', 'Bottom Shelf']) },
   { id: 'big-r', name: 'Big Upper · Right', short: 'Breakfast', kind: 'cabinet', slot: 'big-r', sections: shelves('bgr', ['Top Shelf', 'Middle Shelf', 'Bottom Shelf']) },
   { id: 'drawer-c', name: 'Corner Drawer', short: '', kind: 'drawer', slot: 'drawer-c', sections: shelves('drc', ['Junk Drawer']) },
-  { id: 'base-big', name: 'Big Base Cabinet', short: 'Base', kind: 'cabinet', slot: 'base-big', sections: shelves('bb', ['Shelf', 'Floor']) },
+  { id: 'base-big', name: 'Big Base Cabinet', short: 'Base', kind: 'cabinet', slot: 'base-big', sections: shelves('bb', ['Top Shelf', 'Bottom']) },
+  { id: 'base-big-r', name: 'Double Base Cabinet', short: 'Base 2', kind: 'cabinet', slot: 'base-big-r', sections: shelves('bbr', ['Top Shelf', 'Bottom']) },
   { id: 'island', name: 'Island Cabinet', short: 'Island', kind: 'cabinet', slot: 'island', sections: shelves('isl', ['Shelf', 'Floor · Big Pots & Appliances']) },
   // ---- Clyde (the dog): food bowl + his food, and a bone for his treats ----
   { id: 'clyde', name: "Clyde's Food", short: 'Food', kind: 'pet', slot: 'clyde', sections: [
@@ -73,6 +75,10 @@ export const DEFAULT_ZONES = [
   { id: 'clyde-treats', name: "Clyde's Treats", short: 'Treats', kind: 'pet', slot: 'clyde-treats', sections: [
     { id: 'cl-treats', name: 'Treats & Bones' },
   ] },
+  // ---- laundry nook right of the island: two cedar shelves over a counter on the washer & dryer ----
+  { id: 'laundry-top', name: 'Laundry · Top Shelf', short: 'Top Shelf', kind: 'other', slot: 'laundry-top', sections: [{ id: 'ln-top', name: 'Top Shelf' }] },
+  { id: 'laundry-mid', name: 'Laundry · Lower Shelf', short: 'Lower Shelf', kind: 'other', slot: 'laundry-mid', sections: [{ id: 'ln-mid', name: 'Lower Shelf' }] },
+  { id: 'laundry-counter', name: 'Over the Washer & Dryer', short: 'Counter', kind: 'counter', slot: 'laundry-counter', sections: [{ id: 'ln-wash', name: 'Over the Washer' }, { id: 'ln-dry', name: 'Over the Dryer' }] },
   // ---- garage ----
   { id: 'g-fridge-fz', name: 'Garage Fridge Freezer', kind: 'freezer', slot: 'garage-fridge-fz', sections: [
     { id: 'gz-main', name: 'Freezer Shelf' }, { id: 'gz-door', name: 'Freezer Door' },
@@ -85,7 +91,7 @@ export const DEFAULT_ZONES = [
     { id: 'gu-bin', name: 'Bottom Basket' }, { id: 'gu-door', name: 'Door Racks' },
   ] },
   // ---- elsewhere ----
-  // stand-up pantry closet left of the fridge: four shelves (three with white pull-out trays) and the floor
+  // stand-up pantry closet left of the fridge: four shelves, each a sliding pull-out drawer, and the floor
   { id: 'pantry', name: 'Pantry Closet', short: 'Pantry', kind: 'pantry', slot: 'pantry', sections: PANTRY_SECTIONS },
   { id: 'holiday', name: 'Holiday Closet', kind: 'holiday', slot: 'holiday', sections: [
     { id: 'ho-thanks', name: 'Thanksgiving Bin' }, { id: 'ho-xmas', name: 'Christmas Bin' },
@@ -112,7 +118,7 @@ export function suggestSection(food, zones) {
   if (zone === 'holiday') {
     if (/napkin|candle|punch/.test(id)) return pick('ho-party');
     if (/cookie|cake/.test(id)) return pick('ho-xmas');
-    if (/platter|gravy|bowl/.test(id)) return pick('ho-serve');
+    if (/platter|gravy|bowl|plate|mug|tableware|tablecloth/.test(id)) return pick('ho-serve');
     return pick('ho-thanks');
   }
   if (zone === 'freezer' || cat === 'frozen') return /ice-cream|fries|waffle|pie-shell|pizza/.test(id) || cat === 'meat' ? pick('fz-bin') : pick('fz-tray');
@@ -144,7 +150,21 @@ export function suggestSection(food, zones) {
   if (cat === 'snacks') return pick('skr-2');
   if (cat === 'beverages') return /coffee/.test(id) ? pick('ct-coffee') : /tea/.test(id) ? pick('skl-2') : pick('pa-5');
   if (cat === 'grains') return /cereal|oat|pancake/.test(id) ? pick('bgr-1') : pick('cu-2');
+  if (cat === 'household' && /laundry|fabric|bleach|dryer|stain/.test(id)) return pick('ln-wash');
   if (cat === 'household') return /paper-towel|napkin|bag/.test(id) && !/zip/.test(id) ? pick('pa-4') : /soap|trash|towel|sponge/.test(id) ? pick('sink-1') : pick('drl-1');
-  if (cat === 'kitchenware') return /slow/.test(id) ? pick('pa-3') : /roast|stock-?pot|dutch/.test(id) ? pick('pa-5') : /mixer/.test(id) ? pick('isl-2') : /thermometer/.test(id) ? pick('drr-1') : pick('sd-1', 'isl-1');
+  if (cat === 'kitchenware') {
+    if (/slow/.test(id)) return pick('pa-3');
+    if (/roast|stock-pot|dutch/.test(id)) return pick('pa-5');
+    if (/mixer/.test(id)) return pick('isl-2');
+    if (/baking-sheet|muffin|cake-pan|loaf|cooling|griddle/.test(id)) return pick('sd-1');
+    if (/frying|skillet|saucepan|wok|casserole|pie-dish|mixing|colander/.test(id)) return pick('isl-1');
+    if (/knife|knives|cutting/.test(id)) return pick('ct-oil');
+    if (/rolling|measuring/.test(id)) return pick('ts-3');
+    if (/silverware|spatula|spoon|ladle|whisk|tongs|opener|peeler|grater|mitt|thermometer/.test(id)) return pick('drr-1');
+    if (/mug|glasses/.test(id)) return pick('skl-2');
+    if (/plate|bowls/.test(id)) return pick('skl-3');
+    if (/storage-container/.test(id)) return pick('br-1');
+    return pick('sd-1', 'isl-1');
+  }
   return pick('pa-3');
 }

@@ -22,6 +22,8 @@ export function showItem(id) {
   const it = state.items.find(x => x.id === id);
   if (!it) return;
   const st = itemStatus(it);
+  const gear = it.cat === 'kitchenware'; // pans, dishes, utensils: no dates, nothing gets "used up" or wasted
+  const undated = gear || it.cat === 'household'; // foil, detergent… get used up but never expire
   const uses = allRecipes().filter(r => r.ingredients.some(i => (it.foodId && (i.foodId || matchFood(i.name)?.id) === it.foodId))).slice(0, 8);
   const sheet = openSheet({
     hero: `<div class="sheet-hero wood-mid">${imgOrEmoji(it)}<h2>${esc(it.name)}</h2>${it.brand ? `<div class="crumb">${esc(it.brand)}</div>` : ''}<div class="crumb">📍 ${esc(crumb(it))}</div></div>`,
@@ -32,22 +34,22 @@ export function showItem(id) {
         <div class="row" style="gap:6px">${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}${isLow(it) ? '<span class="pill low">Low</span>' : ''}</div>
       </div>
       <div class="row" style="gap:8px;margin-bottom:10px">
-        <button class="btn btn-sage grow" data-a="used">${icon('check')} Used it up</button>
+        ${gear ? '' : `<button class="btn btn-sage grow" data-a="used">${icon('check')} Used it up</button>`}
         <button class="btn btn-ghost grow" data-a="list">${icon('cart')} Add to list</button>
       </div>
       <div class="row" style="gap:8px">
         <button class="btn btn-ghost btn-sm grow" data-a="edit">${icon('edit')} Edit</button>
         <button class="btn btn-ghost btn-sm grow" data-a="move">${icon('move')} Move</button>
         <button class="btn btn-ghost btn-sm grow" data-a="where">📍 Show me</button>
-        <button class="btn btn-danger btn-sm" data-a="toss" title="Tossed / spoiled">${icon('trash')}</button>
+        <button class="btn btn-danger btn-sm" data-a="toss" title="${gear ? 'Remove' : 'Tossed / spoiled'}">${icon('trash')}</button>
       </div>
       <div class="row" style="gap:8px;margin-top:8px">
-        <button class="btn btn-wood wood-mid btn-sm grow" data-a="restock">${icon('plus')} Restock</button>
-        <button class="btn btn-wood wood-mid btn-sm grow" data-a="date">📅 ${it.dated || (it.dateType && it.dateType !== 'Estimated') ? 'Change date' : 'Set printed date'}</button>
+        <button class="btn btn-wood wood-mid btn-sm grow" data-a="restock">${icon('plus')} ${gear ? 'Add more' : 'Restock'}</button>
+        ${undated ? '' : `<button class="btn btn-wood wood-mid btn-sm grow" data-a="date">📅 ${it.dated || (it.dateType && it.dateType !== 'Estimated') ? 'Change date' : 'Set printed date'}</button>`}
       </div>
       ${batchList(it)}
       <div class="kv">
-        <div><small>${esc(it.dateType && it.dateType !== 'Estimated' ? it.dateType : 'Expires (est.)')}</small><b>${it.expires ? fmtDate(it.expires) : 'No date'}</b></div>
+        ${undated ? `<div><small>Kind</small><b>${gear ? 'Kitchen gear' : 'Household supply'}</b></div>` : `<div><small>${esc(it.dateType && it.dateType !== 'Estimated' ? it.dateType : 'Expires (est.)')}</small><b>${it.expires ? fmtDate(it.expires) : 'No date'}</b></div>`}
         <div><small>Added</small><b>${fmtDate(it.added)}</b></div>
         <div><small>Restock at</small><b>${it.minQty != null && it.minQty !== '' ? `${fmtQty(it.minQty)} ${esc(it.unit)}` : 'Not set'}</b></div>
         <div><small>Category</small><b>${catOf(it.cat).emoji} ${esc(catOf(it.cat).name)}</b></div>
@@ -67,11 +69,12 @@ export function showItem(id) {
         if (cur && Number(cur.qty) === 0) toast(`${it.name} is out — add to your list?`, { action: 'Add', onAction: () => addToList({ name: it.name, foodId: it.foodId, unit: it.unit, reason: 'Ran out' }) });
       });
       b.querySelectorAll('[data-r]').forEach(btn => btn.onclick = () => { close(); actions.openRecipe(btn.dataset.r); });
-      b.querySelector('[data-a=used]').onclick = () => {
+      if (b.querySelector('[data-a=used]')) b.querySelector('[data-a=used]').onclick = () => {
         removeItem(it.id, 'used'); close(); haptic(20);
         toast(`Used up ${it.name}`, { icon: '✅', action: 'Add to list', onAction: () => { addToList({ name: it.name, foodId: it.foodId, unit: it.unit, reason: 'Used up' }); toast('On the list', { icon: '🛒' }); } });
       };
       b.querySelector('[data-a=toss]').onclick = async () => {
+        if (gear) { if (await confirmBox(`Remove ${it.name} from your kitchen?`, { ok: 'Remove', danger: true })) { removeItem(it.id, 'removed'); close(); toast(`Removed ${it.name}`, { icon: '🗑️' }); } return; }
         if (!await confirmBox(`Toss ${it.name}? It'll be logged as wasted so you can spot patterns.`, { ok: 'Toss it', danger: true })) return;
         removeItem(it.id, 'tossed'); close(); toast(`Tossed ${it.name}`, { icon: '🗑️' });
       };
@@ -80,7 +83,7 @@ export function showItem(id) {
       b.querySelector('[data-a=move]').onclick = () => moveItem(it, close);
       b.querySelector('[data-a=where]').onclick = () => { close(); actions.revealItem(it.id); };
       b.querySelector('[data-a=restock]').onclick = () => { close(); restockSheet(it.id); };
-      b.querySelector('[data-a=date]').onclick = () => { close(); dateSheet(it.id, null, { after: () => showItem(it.id) }); };
+      if (b.querySelector('[data-a=date]')) b.querySelector('[data-a=date]').onclick = () => { close(); dateSheet(it.id, null, { after: () => showItem(it.id) }); };
       b.querySelectorAll('[data-bdate]').forEach(btn => btn.onclick = () => { close(); dateSheet(it.id, btn.dataset.bdate, { after: () => showItem(it.id) }); });
       b.querySelectorAll('[data-bdel]').forEach(btn => btn.onclick = () => { removeBatch(it.id, btn.dataset.bdel); close(); haptic(); toast('Batch removed'); showItem(it.id); });
       const op = b.querySelector('[data-openprices]');
@@ -275,13 +278,13 @@ export function editItem(it, { isNew = false } = {}) {
           <label class="field grow"><span>Unit</span><select class="input" name="unit">${[...new Set([it.unit, ...UNITS])].map(u => `<option ${u === it.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
         </div>
         <label class="field"><span>Where it lives</span>${locationSelect(it.sectionId)}</label>
-        <div class="row" style="gap:10px">
+        <div class="row" style="gap:10px;${['kitchenware', 'household'].includes(it.cat) ? 'display:none' : ''}" data-dates>
           <label class="field" style="width:42%"><span>Date type</span><select class="input" name="dateType">${DATE_TYPES.map(t => `<option ${t === (it.dateType || 'Estimated') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
           <label class="field grow"><span>${it.batches?.length ? 'Soonest date' : 'Date'}</span><input class="input" type="date" name="expires" value="${attr(it.expires || '')}"></label>
         </div>
         <p class="small muted expiry-hint" style="margin:-6px 0 12px"></p>
         <div class="row" style="gap:10px">
-          <label class="field grow"><span>Opened on</span><input class="input" type="date" name="openedOn" value="${attr(it.openedOn || '')}"></label>
+          <label class="field grow" style="${['kitchenware', 'household'].includes(it.cat) ? 'display:none' : ''}"><span>Opened on</span><input class="input" type="date" name="openedOn" value="${attr(it.openedOn || '')}"></label>
           <label class="field grow"><span>Restock when ≤</span><input class="input" name="minQty" inputmode="decimal" placeholder="e.g. 1" value="${attr(it.minQty ?? '')}"></label>
         </div>
         ${it.batches?.length ? `<p class="small muted" style="margin:-6px 0 12px">This item has ${it.batches.length} batches — quantity changes come out of the oldest first.</p>` : ''}
@@ -297,6 +300,8 @@ export function editItem(it, { isNew = false } = {}) {
       const f = b.querySelector('form');
       const qty = f.qty;
       let photo = it.image || '';
+      // gear and household supplies have no dates; follow the category if it's changed here
+      f.cat.addEventListener('change', () => { const hide = ['kitchenware', 'household'].includes(f.cat.value); b.querySelector('[data-dates]').style.display = hide ? 'none' : ''; f.openedOn.closest('.field').style.display = hide ? 'none' : ''; });
       b.querySelector('[data-photo]').onchange = async e => { const file = e.target.files[0]; if (!file) return; photo = (await photoFromFile(file)).thumb; b.querySelector('.photo-prev').innerHTML = `<img src="${photo}" alt="">`; b.querySelector('[data-photolbl]').textContent = 'Change photo'; haptic(); };
       b.querySelector('[data-nophoto]')?.addEventListener('click', e => { photo = ''; b.querySelector('.photo-prev').innerHTML = ''; e.target.remove(); });
       f.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { qty.value = Math.max(0, Math.round((Number(qty.value || 0) + Number(btn.dataset.d) * stepFor(f.unit.value)) * 100) / 100); haptic(); });
@@ -350,6 +355,18 @@ function afterAdd(it) {
 // ---------- add flow ----------
 let scanStop = null;
 
+// the big aisles, split up when browsing
+const AISLE_GROUPS = {
+  kitchenware: [
+    ['🍳 Pots & pans', ['frying-pan', 'cast-iron-skillet', 'saucepan', 'stock-pot', 'dutch-oven', 'griddle', 'wok', 'roasting-pan', 'slow-cooker', 'stand-mixer']],
+    ['🧁 Bakeware', ['baking-sheet', 'muffin-tin', 'cake-pan', 'pie-dish', 'casserole-dish', 'loaf-pan', 'cooling-rack', 'mixing-bowls', 'rolling-pin', 'measuring-cups', 'cookie-cutters', 'disposable-foil-pans']],
+    ['🥄 Utensils & gadgets', ['spatula', 'wooden-spoons', 'ladle', 'whisk', 'tongs', 'can-opener', 'vegetable-peeler', 'cheese-grater', 'colander', 'meat-thermometer', 'turkey-baster', 'oven-mitts']],
+    ['🔪 Knives & cutting boards', ['chef-s-knife', 'knife-block', 'steak-knives', 'cutting-board']],
+    ['🍽️ Dishes, silverware & containers', ['silverware', 'dinner-plates', 'bowls', 'mugs', 'drinking-glasses', 'food-storage-containers']],
+    ['🎄 Holiday & seasonal tableware', ['seasonal-tableware', 'holiday-plates', 'holiday-mugs', 'tablecloth', 'serving-platter', 'gravy-boat', 'punch-bowl', 'cake-stand', 'holiday-napkins', 'birthday-candles']],
+  ],
+};
+
 export function addFlow({ sectionId = null, query = '' } = {}) {
   const popular = ['milk', 'eggs', 'bread', 'butter', 'bananas', 'chicken-breast', 'ground-beef', 'cheddar-cheese', 'apples', 'onions', 'potatoes', 'coffee', 'orange-juice', 'spaghetti', 'white-rice', 'lettuce', 'tomatoes', 'greek-yogurt'];
   openSheet({
@@ -362,6 +379,8 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
         <div data-popular>
           <div class="group-h">Quick add<span class="line"></span></div>
           <div class="row wrap" style="gap:8px">${popular.map(id => FOOD_BY_ID[id]).filter(Boolean).map(f => `<button class="chip" data-f="${f.id}">${f.emoji} ${esc(f.name)}</button>`).join('')}</div>
+          <div class="group-h">Kitchen gear<span class="line"></span></div>
+          <div class="row wrap" style="gap:8px">${['frying-pan', 'stock-pot', 'baking-sheet', 'spatula', 'cutting-board', 'silverware', 'dinner-plates', 'food-storage-containers', 'aluminum-foil', 'plastic-wrap'].map(id => FOOD_BY_ID[id]).filter(Boolean).map(f => `<button class="chip" data-f="${f.id}">${f.emoji} ${esc(f.name)}</button>`).join('')}<button class="chip" data-c="kitchenware">🍳 All cookware &amp; dishes…</button></div>
           <div class="group-h">Browse by aisle<span class="line"></span></div>
           <div class="row wrap" style="gap:8px">${CATEGORIES.map(c => `<button class="chip" data-c="${c.id}">${c.emoji} ${esc(c.name)}</button>`).join('')}</div>
         </div>
@@ -405,7 +424,19 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
       b.addEventListener('click', e => {
         const f = e.target.closest('[data-f]'); if (f) return pick(FOOD_BY_ID[f.dataset.f]);
         const c = e.target.closest('[data-c]');
-        if (c) { q.value = ''; pop.classList.add('hidden'); res.innerHTML = FOODS.filter(x => x.cat === c.dataset.c).map(x => `<button class="irow" style="width:100%;text-align:left" data-f="${x.id}"><span class="em">${x.emoji}</span><span class="t"><b>${esc(x.name)}</b></span>${icon('plus')}</button>`).join('') + '<button class="btn btn-ghost btn-block" data-back>← All aisles</button>'; return; }
+        if (c) {
+          q.value = ''; pop.classList.add('hidden');
+          const row = x => `<button class="irow" style="width:100%;text-align:left" data-f="${x.id}"><span class="em">${x.emoji}</span><span class="t"><b>${esc(x.name)}</b></span>${icon('plus')}</button>`;
+          const all = FOODS.filter(x => x.cat === c.dataset.c), groups = AISLE_GROUPS[c.dataset.c];
+          if (!groups) res.innerHTML = all.map(row).join('');
+          else {
+            const used = new Set(groups.flatMap(g => g[1]));
+            res.innerHTML = [...groups, ['More', all.filter(x => !used.has(x.id)).map(x => x.id)]].filter(g => g[1].length)
+              .map(([name, ids]) => `<div class="group-h">${esc(name)}<span class="line"></span></div>${ids.map(id => FOOD_BY_ID[id]).filter(Boolean).map(row).join('')}`).join('');
+          }
+          res.innerHTML += '<button class="btn btn-ghost btn-block" data-back>← All aisles</button>';
+          return;
+        }
         if (e.target.closest('[data-back]')) { res.innerHTML = ''; pop.classList.remove('hidden'); return; }
         if (e.target.closest('[data-new]')) return pick(null, { name: q.value.trim(), emoji: '📦' });
         if (e.target.closest('[data-off]')) { $('.seg button[data-v=label]', b).click(); $('[data-lq]', b).value = q.value; labelSearch(b, pick); return; }

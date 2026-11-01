@@ -63,7 +63,7 @@ function home(s) {
       <p class="small muted" style="margin:0 0 10px">Adds notifications, the home-screen widget, and better product search. Open the file once it downloads; Android may ask you to allow installs from your browser.</p>
       <a class="btn btn-brass btn-block" href="https://github.com/real-CAK3D/ShelfandStock/releases/latest/download/ShelfAndStock.apk">${icon('download')} Download the app</a>
     </div>`}
-    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.4 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance · Food recalls from <b>openFDA</b> · Shopper prices from <b>Open Prices</b>.</p>`;
+    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.5 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance · Food recalls from <b>openFDA</b> · Shopper prices from <b>Open Prices</b>.</p>`;
 }
 
 function head(title, backTo) {

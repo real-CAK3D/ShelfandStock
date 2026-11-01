@@ -8,7 +8,7 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 10;
+const VERSION = 11;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -41,6 +41,25 @@ const MIGRATIONS = {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
     }
+  },
+  // v10 → v11: shelf counts from the real cabinets, a second big base on the corner wall, the laundry nook.
+  // Only shelves still carrying their old default name are renamed; missing shelves and places are added.
+  11: s => {
+    const OLD = { 'afl-1': 'Shelf', 'afr-1': 'Shelf', 'cs-1': 'Coffee & Filters', 'sink-1': 'Cleaning Supplies', 'sink-2': 'Trash Bags & Sponges', 'bl-1': 'Shelf', 'bl-2': 'Floor', 'br-1': 'Shelf', 'br-2': 'Floor', 'bb-1': 'Shelf', 'bb-2': 'Floor' };
+    for (const zid of ['above-fridge-l', 'above-fridge-r', 'corner-small', 'sink-base', 'base-l', 'base-r', 'base-big']) {
+      const z = s.zones.find(x => x.id === zid), d = DEFAULT_ZONES.find(x => x.id === zid);
+      if (!z || !d) continue;
+      for (const sec of d.sections) {
+        const have = z.sections.find(x => x.id === sec.id);
+        if (!have) z.sections.push({ ...sec }); else if (have.name === OLD[sec.id]) have.name = sec.name;
+      }
+    }
+    // every pantry shelf is a sliding drawer (1.4.1 named three of them "Pull-out Tray")
+    const pz = s.zones.find(x => x.id === 'pantry');
+    const WAS = { 'pa-1': ['Top Shelf · Bags', 'Top Shelf · Bulk'], 'pa-2': ['Shelf 2 · Pull-out Tray', 'Grains & Pasta'], 'pa-3': ['Shelf 3 · Pull-out Tray', 'Canned Overflow'], 'pa-4': ['Shelf 4 · Pull-out Tray', 'Snacks'] };
+    if (pz) for (const d of PANTRY_SECTIONS) { const sec = pz.sections.find(x => x.id === d.id); if (sec && WAS[d.id]?.includes(sec.name)) sec.name = d.name; }
+    const at = Math.max(0, s.zones.findIndex(x => x.id === 'g-fridge-fz'));
+    for (const id of ['laundry-counter', 'laundry-mid', 'laundry-top', 'base-big-r']) if (!s.zones.some(x => x.id === id)) s.zones.splice(at, 0, structuredClone(DEFAULT_ZONES.find(x => x.id === id)));
   },
   // v9 → v10: the stand-up pantry closet left of the fridge (4 shelves + floor); only renames what's still the old default
   10: s => {
@@ -537,7 +556,11 @@ export function seedSample() {
     add('frozen-waffles', 1, { name: 'Frozen Pancakes', emoji: '🥞', sectionId: 'fz-bin' }), add('frozen-peas', 1, { sectionId: 'fz-bin' }), add('frozen-pizza', 2, { sectionId: 'fz-bin' }),
     add('whole-turkey', 14, { sectionId: 'gu-bin', tags: ['thanksgiving'] }),
     add('dog-food', 1, { minQty: 1, notes: "Clyde's kibble", sectionId: 'cl-bag' }), add('dog-food', 1, { name: 'Kibble (in bowl)', unit: 'bowl', sectionId: 'cl-bowl', noExpiry: true, expires: null }),
-    add('dog-treats', 1, { minQty: 1, sectionId: 'cl-treats' }), add('dog-bones', 3, { unit: 'ea', sectionId: 'cl-treats' }),
+    add('dog-treats', 1, { minQty: 1, sectionId: 'cl-treats' }),
+    // the laundry nook as photographed: everything's on the counter over the machines, the shelves are still empty
+    add('laundry-detergent', 1, { name: 'Gain Laundry Detergent', minQty: 1, sectionId: 'ln-wash' }), add('bleach', 1, { sectionId: 'ln-wash' }),
+    add('fabric-softener', 1, { name: 'Snuggle Blue Sparkle', sectionId: 'ln-wash' }), add('dog-treats', 1, { name: 'Blue Buffalo Health Bars', sectionId: 'ln-wash', notes: "Clyde's extra treats" }),
+    add('fruit-snacks', 2, { name: 'Great Value Fruit Snacks', sectionId: 'ln-dry' }), add('dog-bones', 3, { unit: 'ea', sectionId: 'cl-treats' }),
     add('steak', 3, { sectionId: 'gu-2', expires: addDays(T, 200) }), add('frozen-berries', 2, { sectionId: 'gu-3' }), add('shrimp', 2, { sectionId: 'gu-2' }),
     add('ice', 2, { sectionId: 'gz-main' }), add('frozen-waffles', 1, { sectionId: 'gz-door' }),
     add('beer', 2, { sectionId: 'gf-door' }), add('sparkling-water', 2, { sectionId: 'gf-door' }), add('eggnog', 1, { sectionId: 'gf-top', tags: ['christmas'] }),

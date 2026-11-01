@@ -62,14 +62,25 @@ const ROOMS = [
     Z('counter', 26, 40, 72, 12, { type: 'counter' }),
     D('countertop', 0, 52, 100, 4),
     Z('drawer-c', 2, 57, 30, 6.5, { type: 'drawer' }), Z('base-big', 2, 64.5, 30, 23.5),
+    // the second big base: same size, two doors, a plain face where the drawer would be
+    D('cab-edge', 33.5, 57, 30, 6.5), Z('base-big-r', 33.5, 64.5, 30, 23.5, { type: 'double' }),
+    D('island-top', 66, 63, 33, 5), Z('island', 68, 68, 29, 20, { finish: 'espresso' }),
     D('floor', 0, 88, 100, 12),
-    // Clyde's spot on the floor: water bowl, food bowl (his food), bone (his treats)
-    // centered under the gap between the big base cabinet and the island
-    D('clyde-mat', 18, 90.5, 38, 8, '<span>CLYDE</span>'),
-    D('water-bowl', 20, 91.5, 10, 5.5, '<i></i>'),
-    Z('clyde', 31.5, 90.8, 11, 6.5, { type: 'bowl' }),
-    Z('clyde-treats', 44, 91, 10, 6, { type: 'bone' }),
-    D('island-top', 40, 63, 58, 5), Z('island', 43, 68, 52, 21, { finish: 'espresso' }),
+    // Clyde's spot, all the way right on the floor: water, food, the bone lying flat, then his name
+    D('clyde-mat', 46, 90, 52, 9, '<span>CLYDE</span>'),
+    D('water-bowl', 48, 91.5, 10, 5.5, '<i></i>'),
+    Z('clyde', 60, 90.8, 11, 6.5, { type: 'bowl' }),
+    Z('clyde-treats', 73, 91.3, 11, 5.5, { type: 'bone' }),
+  ] },
+  // the laundry nook right of the island: cedar walls, two wraparound shelves, a counter on the washer & dryer
+  { id: 'laundry', label: '🧺 Laundry', parts: [
+    D('cedar', 3, 2, 94, 49),
+    D('shelf-board', 3, 21, 94, 2.2), Z('laundry-top', 5, 9, 90, 12, { type: 'counter' }),
+    D('shelf-board', 3, 37, 94, 2.2), Z('laundry-mid', 5, 25, 90, 12, { type: 'counter' }),
+    D('laundry-board', 3, 49.5, 94, 2.8), Z('laundry-counter', 5, 39.5, 90, 10, { type: 'counter' }),
+    D('washer', 5, 52.5, 44, 35.5, '<span class="panel"></span><span class="porthole"></span>'),
+    D('dryer', 51, 52.5, 44, 35.5, '<span class="panel"></span><span class="porthole"></span>'),
+    D('floor', 0, 88, 100, 12),
   ] },
 ];
 const HOME_ROOM = 2; // the stove wall; swipe right for the pantry, then the garage
@@ -113,9 +124,9 @@ function part(p) {
     case 'enamel-drawer': doors = `<button class="door drawer enamel" ${aria}><span class="label">${label}</span></button>`; break;
     case 'drawer': doors = `<button class="door drawer oak" ${aria}><span class="knob c"></span></button>`; break;
     case 'bowl': return `<button class="pos pet-bowl" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="kibble"></span>${badge(id)}</button>`;
-    case 'bone': return `<button class="pos pet-bone" data-zone="${id}" style="${pct(p.box)}" ${aria}>🦴${badge(id)}</button>`;
+    case 'bone': return `<button class="pos pet-bone" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="bone">🦴</span>${badge(id)}</button>`;
     case 'closet': doors = `<button class="door cherry" ${aria}><span class="knob" style="right:8%;top:50%;width:11px;height:11px"></span><span class="label">${label}</span></button>`; break;
-    case 'counter': return `<button class="pos counter-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}>${itemsIn(id).slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('')}</button>`;
+    case 'counter': { const its = itemsIn(id); return `<button class="pos counter-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}>${its.length ? its.slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('') : `<em class="cz-empty">${label}</em>`}</button>`; }
     default: doors = `<button class="door ${fin} ${right ? 'right' : ''}" ${aria}><span class="pull v" style="${right ? 'left' : 'right'}:7px;${p.box[1] < 40 ? 'bottom' : 'top'}:10px"></span><span class="label">${label}</span></button>`;
   }
   // the closet shows each shelf behind the door, the rest just a peek of what's inside
@@ -193,7 +204,7 @@ export function render(root) {
       t = setTimeout(() => {
         const r = Math.round(rooms.scrollLeft / rooms.clientWidth);
         if (r !== room) { room = r; haptic(8); }
-        $$('.room-tab', root).forEach((b, i) => b.classList.toggle('on', i === room));
+        $$('.room-tab', root).forEach((b, i) => { b.classList.toggle('on', i === room); if (i === room) b.parentElement.scrollTo({ left: b.offsetLeft - (b.parentElement.clientWidth - b.offsetWidth) / 2, behavior: 'smooth' }); }); // sideways only
         $$('.room-dots i', root).forEach((d, i) => d.classList.toggle('on', i === room));
       }, 60);
     }, { passive: true });
