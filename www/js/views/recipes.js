@@ -188,7 +188,7 @@ function cookedFlow(r, m, servings) {
           else if (sel.value === 'one') adjustQty(it.id, -(it.unit === x.ing.unit ? scaleQty(x.ing.qty, r.servings, servings) : 1));
           else if (sel.value === 'some') adjustQty(it.id, -Math.min(Number(it.qty), Number(it.qty) * 0.25));
         }
-        if ($('[data-left]', b).checked) actions.quickAdd({ name: `Leftover ${r.title}`, foodId: 'leftovers', emoji: r.emoji, qty: 1, unit: 'container', sectionId: 'fr-top' });
+        if ($('[data-left]', b).checked) actions.quickAdd({ name: `Leftover ${r.title}`, foodId: 'leftovers', emoji: r.emoji, qty: 1, unit: 'container', ...(state.zones.some(z => z.sections.some(x => x.id === 'fr-top')) ? { sectionId: 'fr-top' } : {}) }); // top shelf, if it's still there
         update(s => { s.history.push({ ts: Date.now(), by: who(), type: 'cooked', name: r.title, recipeId: r.id }); }, 'cooked');
         close(); confetti(innerWidth / 2, innerHeight / 2, 40); toast(`Cooked ${r.title}!`, { icon: '👩‍🍳' });
       };
@@ -246,7 +246,7 @@ export function parseLine(line) {
   const m = rest.match(/^(\d+\s+\d\/\d|\d+\/\d|\d*\.?\d+)\s*/);
   if (m) { qty = m[1].includes('/') ? m[1].split(/\s+/).reduce((a, p) => { const [x, y] = p.split('/'); return a + (y ? x / y : Number(x)); }, 0) : Number(m[1]); rest = rest.slice(m[0].length); }
   const u = rest.match(UNITS_RE);
-  if (u) { unit = u[1].toLowerCase().replace(/^tablespoons?$/, 'tbsp').replace(/^teaspoons?$/, 'tsp').replace(/^(pounds?|lbs)$/, 'lb').replace(/^ounces?$/, 'oz').replace(/s$/, ''); rest = rest.slice(u[0].length).trim(); }
+  if (u) { unit = u[1].toLowerCase().replace(/^tablespoons?$/, 'tbsp').replace(/^teaspoons?$/, 'tsp').replace(/^(pounds?|lbs)$/, 'lb').replace(/^ounces?$/, 'oz').replace(/(ch|sh|x|ss)es$/, '$1').replace(/([^s])s$/, '$1'); rest = rest.slice(u[0].length).trim(); } // bunches → bunch, boxes → box, cans → can
   const [name, ...note] = rest.split(',');
   const food = matchFood(name);
   return { qty: Math.round(qty * 100) / 100, unit, name: food?.name || name.trim(), note: note.join(',').trim(), optional: /optional/i.test(line), foodId: food?.id || null };

@@ -110,10 +110,21 @@ export const LEGACY_SECTIONS = {
 };
 
 // Pick a sensible section for a catalog food.
-export function suggestSection(food, zones) {
+// `hint` ({ name, cat }) places things that aren't in the food catalog, like custom items.
+const COLD_CATS = ['dairy', 'meat', 'deli', 'leftovers'];
+export function suggestSection(food, zones, hint) {
   const has = id => zones.some(z => z.sections.some(s => s.id === id));
-  const pick = (...ids) => ids.find(has) || zones[0]?.sections[0]?.id;
-  if (!food) return pick('fr-mid');
+  // when the usual spot is gone (a place was deleted or renamed away): cold food to the fridge, the rest
+  // to a pantry, then a big base cabinet, then any cabinet; never just the first shelf in the list
+  const cold = () => food && (food.zone === 'fridge' || food.zone === 'freezer' || food.cat === 'frozen' || COLD_CATS.includes(food.cat));
+  const fallback = () => cold()
+    ? ['fr-mid', 'fr-bot', 'gf-top', 'gf-bot'].find(has) || zones.find(z => z.kind === 'fridge')?.sections[0]?.id
+    : zones.find(z => z.kind === 'pantry')?.sections[0]?.id || ['isl-1', 'bb-1', 'bbr-1', 'bgl-1'].find(has) || zones.find(z => z.kind === 'cabinet')?.sections[0]?.id;
+  const pick = (...ids) => ids.find(has) || fallback() || zones[0]?.sections[0]?.id;
+  if (!food) {
+    if (!hint?.cat || hint.cat === 'pantry') return pick('pa-3');
+    food = { cat: hint.cat, id: String(hint.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'), zone: COLD_CATS.includes(hint.cat) ? 'fridge' : hint.cat === 'frozen' ? 'freezer' : 'cabinet' };
+  }
   const { cat, zone, id } = food;
   if (cat === 'pet') return /treat|bone|chew/.test(id) ? pick('cl-treats') : pick('cl-bag');
   if (zone === 'holiday') {

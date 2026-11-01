@@ -1,7 +1,7 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
 import { openPrices } from '../services/openprices.js';
-import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money } from '../store.js';
+import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty } from '../store.js';
 import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
@@ -176,11 +176,11 @@ export function restockSheet(itemId) {
       <button class="btn btn-brass btn-block" data-save>${icon('check')} Add batch</button>`,
     onMount: (b, close) => {
       const q = $('[data-qty]', b);
-      b.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { q.value = Math.max(0, Math.round((Number(q.value || 0) + Number(btn.dataset.d) * stepFor(it.unit)) * 100) / 100); haptic(); });
+      b.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { q.value = Math.max(0, Math.round(((parseQty(q.value) || 0) + Number(btn.dataset.d) * stepFor(it.unit)) * 100) / 100); haptic(); });
       const read = wireDatePicker(b);
       $('[data-save]', b).onclick = () => {
         const v = read();
-        restockItem(itemId, { qty: Number(q.value) || 1, ...v });
+        restockItem(itemId, { qty: parseQty(q.value) || 1, ...v });
         haptic(20); close(); confetti(innerWidth / 2, innerHeight * .6, 14);
         toast(`Restocked ${it.name}`, { icon: '📦', action: 'View', onAction: () => showItem(itemId) });
       };
@@ -207,12 +207,12 @@ export function labelWalk(itemIds, { title = 'Label this shelf', onDone } = {}) 
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow" data-skip>Skip</button><button class="btn btn-brass grow" data-next>${icon('check')} ${i === ids.length - 1 ? 'Finish' : 'Next'}</button></div>`;
     host.firstElementChild.nextElementSibling.animate([{ opacity: 0, transform: 'translateX(30px)' }, { opacity: 1, transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)' });
     const q = $('[data-qty]', host);
-    host.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { q.value = Math.max(0, Math.round((Number(q.value || 0) + Number(btn.dataset.d) * stepFor(it.unit)) * 100) / 100); haptic(); });
+    host.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { q.value = Math.max(0, Math.round(((parseQty(q.value) || 0) + Number(btn.dataset.d) * stepFor(it.unit)) * 100) / 100); haptic(); });
     const read = wireDatePicker(host);
     $('[data-next]', host).onclick = () => {
       const v = read();
       const cur = structuredClone(state.items.find(x => x.id === it.id));
-      const newQ = Number(q.value);
+      const newQ = parseQty(q.value);
       if (!cur.batches?.length && isFinite(newQ)) cur.qty = newQ;
       saveItem(cur);
       setBatchDate(it.id, null, v.expires, v.dateType);
@@ -304,7 +304,7 @@ export function editItem(it, { isNew = false } = {}) {
       f.cat.addEventListener('change', () => { const hide = ['kitchenware', 'household'].includes(f.cat.value); b.querySelector('[data-dates]').style.display = hide ? 'none' : ''; f.openedOn.closest('.field').style.display = hide ? 'none' : ''; });
       b.querySelector('[data-photo]').onchange = async e => { const file = e.target.files[0]; if (!file) return; photo = (await photoFromFile(file)).thumb; b.querySelector('.photo-prev').innerHTML = `<img src="${photo}" alt="">`; b.querySelector('[data-photolbl]').textContent = 'Change photo'; haptic(); };
       b.querySelector('[data-nophoto]')?.addEventListener('click', e => { photo = ''; b.querySelector('.photo-prev').innerHTML = ''; e.target.remove(); });
-      f.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { qty.value = Math.max(0, Math.round((Number(qty.value || 0) + Number(btn.dataset.d) * stepFor(f.unit.value)) * 100) / 100); haptic(); });
+      f.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { qty.value = Math.max(0, Math.round(((parseQty(qty.value) || 0) + Number(btn.dataset.d) * stepFor(f.unit.value)) * 100) / 100); haptic(); });
       const hint = () => {
         const food = FOOD_BY_ID[it.foodId] || matchFood(f.name.value);
         const sec = sectionById(f.sectionId.value);
@@ -325,7 +325,7 @@ export function editItem(it, { isNew = false } = {}) {
         const next = {
           ...it, ...data,
           name: data.name.trim() || it.name, emoji: data.emoji.trim() || it.emoji,
-          qty: Number(data.qty) || 0, minQty: data.minQty === '' ? null : Number(data.minQty),
+          qty: isFinite(parseQty(data.qty)) ? parseQty(data.qty) : Number(it.qty) || 0, minQty: data.minQty === '' || !isFinite(parseQty(data.minQty)) ? null : parseQty(data.minQty),
           expires: data.expires || null, tags: data.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
           openedOn: data.openedOn || null, opened: !!data.openedOn, image: photo,
         };

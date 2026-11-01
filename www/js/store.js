@@ -39,7 +39,7 @@ const MIGRATIONS = {
     const valid = new Set(s.zones.flatMap(z => z.sections.map(x => x.id)));
     for (const it of s.items) {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
-      if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
+      if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones, it);
     }
   },
   // v11 → v12: fridge spots named like the real one (fresh box, small shelf, vegetable & produce drawers)
@@ -99,18 +99,51 @@ const MIGRATIONS = {
     const valid = new Set(s.zones.flatMap(z => z.sections.map(x => x.id)));
     for (const it of s.items) {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
-      if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
+      if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones, it);
     }
   },
 };
+
+// ---------- keeping user text safe ----------
+// Icons are printed straight into the page, so they're kept to a short emoji: markup characters are
+// dropped. Photos must be image data or https links, colors must be colors. Run on every save, load,
+// restored backup and synced kitchen, so nothing typed on any phone can inject code into another.
+export const cleanEmoji = (e, fallback = '📦') => String(e ?? '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16) || fallback;
+const cleanImg = u => typeof u === 'string' && /^(data:image\/[a-z+.-]+;base64,[a-z0-9+/=]+|https:\/\/[^"'<>\s`]+)$/i.test(u) ? u : '';
+const cleanColor = c => typeof c === 'string' && /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i.test(c) ? c : '#a0703e';
+export function sanitize(s) {
+  for (const i of s.items || []) { i.emoji = cleanEmoji(i.emoji); if (i.image) i.image = cleanImg(i.image); }
+  for (const e of s.shopping || []) if (e.emoji != null) e.emoji = cleanEmoji(e.emoji, '🛒');
+  for (const e of s.events || []) if (e.emoji != null) e.emoji = cleanEmoji(e.emoji, '🍽️');
+  for (const r of s.recipes || []) { r.emoji = cleanEmoji(r.emoji, '🍲'); if (r.image) r.image = cleanImg(r.image); }
+  for (const m of s.members || []) { m.emoji = cleanEmoji(m.emoji, '⭐'); m.color = cleanColor(m.color); if (m.photo) m.photo = cleanImg(m.photo); }
+  return s;
+}
+
+// Bring a saved kitchen (this phone's, a backup file) up to date.
+export function migrate(s) {
+  s.settings ||= {}; s.zones ||= []; s.items ||= [];
+  for (let v = (s.v || 1) + 1; v <= VERSION; v++) MIGRATIONS[v]?.(s);
+  s.v = VERSION;
+  return sanitize(s);
+}
+
+// The shared part of a kitchen from household sync. Phones on older versions don't send a version
+// and know nothing of newer storage, so re-run the layout steps (10 and up only touch zones and only
+// add or rename defaults, so running them again is harmless).
+export function upgradeShared(r) {
+  if (!r?.zones) return r;
+  r.items ||= [];
+  for (let v = Math.max(r.v ?? 9, 9) + 1; v <= VERSION; v++) MIGRATIONS[v]?.(r);
+  r.v = VERSION;
+  return sanitize(r);
+}
 
 function load() {
   try {
     const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY);
     if (!raw) return blank();
-    const s = JSON.parse(raw);
-    for (let v = (s.v || 1) + 1; v <= VERSION; v++) MIGRATIONS[v]?.(s);
-    s.v = VERSION;
+    const s = migrate(JSON.parse(raw));
     return { ...blank(), ...s, settings: { ...blank().settings, ...s.settings } };
   } catch (e) {
     console.warn('state load failed, starting fresh', e);
@@ -132,6 +165,7 @@ function persist() {
 
 export function update(fn, why = '') {
   fn(state);
+  sanitize(state);
   persist();
   subs.forEach(s => s(why));
 }
@@ -201,7 +235,8 @@ export const isLow =it => it.minQty != null && it.minQty !== '' && Number(it.qty
 
 export function makeItem(partial) {
   const food = partial.foodId ? FOOD_BY_ID[partial.foodId] : matchFood(partial.name);
-  const sectionId = partial.sectionId || suggestSection(food, state.zones);
+  // a shelf that no longer exists (deleted, or from another phone's layout) gets a suggested one instead
+  const sectionId = (partial.sectionId && state.zones.some(z => z.sections.some(x => x.id === partial.sectionId)) && partial.sectionId) || suggestSection(food, state.zones, partial);
   const it = {
     id: uid(), name: food?.name || partial.name || 'Item', foodId: food?.id || null,
     cat: food?.cat || partial.cat || 'pantry', emoji: food?.emoji || partial.emoji || '📦',
@@ -209,6 +244,7 @@ export function makeItem(partial) {
     opened: false, openedOn: null, minQty: null, barcode: '', brand: '', image: '', off: null, tags: [], notes: '',
     dateType: 'Estimated', dated: false,
     ...partial,
+    sectionId,
   };
   if (!it.foodId && food) it.foodId = food.id;
   if (it.expires === null && !partial.noExpiry) {
@@ -363,7 +399,9 @@ export function addToList(entry) {
   update(s => {
     const dup = s.shopping.find(x => !x.done && (food ? x.foodId === food.id : x.name.toLowerCase() === name.toLowerCase()));
     if (dup) {
-      if (entry.reason && !dup.reasons.includes(entry.reason)) dup.reasons.push(entry.reason);
+      // the same need asked for again (tapping "Shop for…" twice) doesn't double it; a different reason adds up
+      if (entry.reason && dup.reasons.includes(entry.reason)) return;
+      if (entry.reason) dup.reasons.push(entry.reason);
       if (entry.unit === dup.unit && entry.qty) dup.qty = Math.round((Number(dup.qty) + Number(entry.qty)) * 100) / 100;
       return;
     }
@@ -443,13 +481,24 @@ export function suggestions() {
 
 export const scaleQty = (qty, servings, guests) => {
   if (!guests || !servings) return qty;
-  return Math.round(qty * Math.max(1, guests / servings) * 4) / 4;
+  // scales both ways (a recipe for 4 made for 2 halves), to the nearest quarter, never below a quarter
+  return Math.max(0.25, Math.round(qty * (guests / servings) * 4) / 4);
 };
 
 export function fmtDate(isoDate, opts = { weekday: 'short', month: 'short', day: 'numeric' }) {
   return new Date(isoDate + 'T12:00').toLocaleDateString(undefined, opts);
 }
 
+// Read an amount someone typed or that fmtQty showed: "2", "0.5", "½", "1½", "1 1/2", "3/4". NaN if it isn't one.
+const VULGAR = { '¼': .25, '½': .5, '¾': .75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': .125, '⅜': .375, '⅝': .625, '⅞': .875 };
+export const parseQty = v => {
+  const t = String(v ?? '').trim().replace(',', '.');
+  if (!t) return NaN;
+  const m = t.match(/^(\d+(?:\.\d+)?)?\s*(?:([¼½¾⅓⅔⅛⅜⅝⅞])|(\d+)\s*\/\s*(\d+))?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return NaN;
+  const whole = m[1] ? Number(m[1]) : 0, frac = m[2] ? VULGAR[m[2]] : m[3] ? Number(m[3]) / Number(m[4] || 1) : 0;
+  return m[3] && Number(m[4]) === 0 ? NaN : Math.round((whole + frac) * 1000) / 1000;
+};
 export const fmtQty = q => {
   const n = Number(q);
   if (!isFinite(n)) return q;

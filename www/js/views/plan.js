@@ -102,7 +102,7 @@ export function openEvent(id) {
       <button class="btn btn-ghost btn-block btn-sm" data-del style="margin-top:14px;color:var(--tomato)">${icon('trash')} Delete event</button>`,
     onMount: (b, close) => {
       $$('[data-r]', b).forEach(x => x.onclick = () => actions.openRecipe(x.dataset.r));
-      $('[data-shop]', b)?.addEventListener('click', () => { const n = shopFor(e); toast(n ? `${n} items added for ${e.title}` : 'You already have everything', { icon: '🛒' }); haptic(20); });
+      $('[data-shop]', b)?.addEventListener('click', () => { const n = shopFor(e), short = (e.recipeIds || []).map(recipeById).filter(Boolean).some(r => recipeMatch(r, e.guests || r.servings).missing.length); toast(n ? `${n} items added for ${e.title}` : short ? 'Already on your list' : 'You already have everything', { icon: '🛒' }); haptic(20); });
       $('[data-edit]', b).onclick = () => { close(); eventEditor(e); };
       $$('[data-item]', b).forEach(x => x.onclick = () => { close(); actions.revealItem(x.dataset.item); });
       $('[data-del]', b).onclick = async () => { if (!await confirmBox(`Delete “${e.title}”?`, { ok: 'Delete', danger: true })) return; removeEvent(e.id); close(); toast('Deleted'); };

@@ -1,7 +1,7 @@
 // Settings: a menu of pages (look, cooking, storage by room, people, stores, notifications, sync, report, backup).
 
-import { state, update, replaceState, resetAll, seedSample, uid } from '../store.js';
-import { ZONE_KINDS } from '../data/layout.js';
+import { state, update, replaceState, resetAll, seedSample, uid, migrate } from '../store.js';
+import { ZONE_KINDS, suggestSection } from '../data/layout.js';
 import { FOOD_BY_ID, searchFoods } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confirmBox, openSheet } from '../ui/dom.js';
 import { actions } from '../router.js';
@@ -275,7 +275,7 @@ export function render(root, params = {}) {
     const zd = e.target.closest('[data-zdel]');
     if (zd) {
       const z = state.zones.find(x => x.id === zd.dataset.zdel), n = state.items.filter(i => z.sections.some(s => s.id === i.sectionId)).length;
-      if (await confirmBox(`Delete “${z.name}”?${n ? ` Its ${n} items move to the first remaining shelf.` : ''}`, { ok: 'Delete', danger: true })) { zone = null; update(s => { s.zones = s.zones.filter(x => x.id !== z.id); const fallback = s.zones[0]?.sections[0]?.id; s.items.forEach(i => { if (z.sections.some(sec => sec.id === i.sectionId)) i.sectionId = fallback; }); }); }
+      if (await confirmBox(`Delete “${z.name}”?${n ? ` Its ${n} items move to where they’d usually go.` : ''}`, { ok: 'Delete', danger: true })) { zone = null; update(s => { s.zones = s.zones.filter(x => x.id !== z.id); s.items.forEach(i => { if (z.sections.some(sec => sec.id === i.sectionId)) i.sectionId = suggestSection(FOOD_BY_ID[i.foodId], s.zones, i); }); }, 'zone'); }
       return;
     }
     const sa = e.target.closest('[data-sadd]'); if (sa) return update(s => { s.zones.find(z => z.id === sa.dataset.sadd).sections.push({ id: 's-' + uid(), name: 'New shelf' }); });
@@ -343,6 +343,6 @@ async function importData(file) {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.items) || !Array.isArray(data.zones)) throw new Error('Not a Shelf & Stock backup');
     if (!await confirmBox(`Restore ${data.items.length} items from this backup? Your current kitchen will be replaced.`, { ok: 'Restore' })) return;
-    replaceState(data); toast('Backup restored', { icon: '✅' }); actions.go('kitchen');
+    replaceState(migrate(data)); toast('Backup restored', { icon: '✅' }); actions.go('kitchen');
   } catch (e) { toast('That file isn’t a Shelf & Stock backup', { icon: '⚠️' }); }
 }

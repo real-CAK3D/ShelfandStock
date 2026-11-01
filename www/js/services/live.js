@@ -36,7 +36,10 @@ export function announce(text, emoji) {
 }
 export function pinged() { channel?.send({ type: 'broadcast', event: 'changed', payload: { by: me()?.id } }).catch(() => { }); }
 
-async function connect() {
+// one connection attempt at a time: a second call while the first is still loading would open a duplicate channel
+let connecting = null;
+function connect() { return connecting ||= connectNow().finally(() => { connecting = null; }); }
+async function connectNow() {
   const code = syncInfo().code;
   if (!code || !me()) return disconnect();
   if (channelCode === code && channel) return retrack();

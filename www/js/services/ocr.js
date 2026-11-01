@@ -61,7 +61,8 @@ export function parseDates(text) {
 }
 
 // ---------- receipts ----------
-const NOT_ITEMS = /(sub\s*total|total|tax|change|cash|visa|master|debit|credit|balance|saving|you saved|discount|coupon|bottle dep|items?\s*sold|tend|auth|approval|ref\s*#|thank|member|points|rewards|card|account|store\s*#|cashier|register|pay)/i;
+// whole words only, so "Cashews", "Pork Tenderloin", "Papaya" and "Cardamom" aren't mistaken for payment lines
+const NOT_ITEMS = /\b(sub\s*total|total|tax|change|cash|visa|master\s*card|mastercard|debit|credit|balance|savings?|you saved|discount|coupon|bottle dep(osit)?|items?\s*sold|tend(ered)?|auth|approval|ref\s*#|thank|member|points|rewards|card|account|store\s*#|cashier|register|pay(ment)?|amount due)\b/i;
 const ABBR = {
   mlk: 'milk', whl: 'whole', wh: 'whole', bnls: 'boneless', chkn: 'chicken', chk: 'chicken', brst: 'breast', grnd: 'ground', gr: 'ground', bf: 'beef',
   bnna: 'bananas', ban: 'bananas', bnn: 'bananas', chs: 'cheese', ched: 'cheddar', shrd: 'shredded', ygrt: 'yogurt', yog: 'yogurt', brd: 'bread', wht: 'white',
@@ -85,7 +86,8 @@ export function parseReceipt(text) {
     const m = l.match(/^(.*?[A-Za-z].*?)\s+\$?\s?(-?\d{1,4}[.,]\d{2})\s*-?\s*[A-Z]{0,2}\s*$/);
     if (!m) continue;
     const price = Number(m[2].replace(',', '.'));
-    if (/^\s*(grand\s*)?total|amount\s*due|balance\s*due/i.test(m[1]) && !/sub/i.test(m[1])) { total = price; continue; }
+    // the real total: "TOTAL", "GRAND TOTAL", "BALANCE DUE"; not "TOTAL SAVINGS", "TOTAL TAX" or "SUBTOTAL"
+    if (/^\s*(grand\s*)?total\b|amount\s*due|balance\s*due/i.test(m[1]) && !/sub|sav|tax|disc|items?|coupon|you saved/i.test(m[1])) { if (total == null || price > total) total = price; continue; }
     if (NOT_ITEMS.test(m[1]) || price <= 0) continue;
     const name = cleanReceiptName(m[1]);
     if (name.length < 2) continue;

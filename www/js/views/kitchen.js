@@ -337,8 +337,8 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
     const it = e.target.closest('[data-item]'); if (it) return showItem(it.dataset.item);
     const ad = e.target.closest('[data-addsec]'); if (ad) return actions.addItem({ sectionId: ad.dataset.addsec });
     if (e.target.closest('[data-add]')) return actions.addItem({ sectionId: filter !== 'all' ? filter : z.sections[0]?.id });
-    const ls = e.target.closest('[data-labelsec]'); if (ls) return labelWalk(state.items.filter(i => i.sectionId === ls.dataset.labelsec).map(i => i.id), { title: `Label: ${sectionById(ls.dataset.labelsec)?.name}` });
-    if (e.target.closest('[data-label]')) return labelWalk(itemsIn(zoneId).filter(i => filter === 'all' || i.sectionId === filter).map(i => i.id), { title: `Label: ${z.name}` });
+    const ls = e.target.closest('[data-labelsec]'); if (ls) return labelWalk(state.items.filter(i => i.sectionId === ls.dataset.labelsec).map(i => i.id), { title: `Label: ${esc(sectionById(ls.dataset.labelsec)?.name || '')}` });
+    if (e.target.closest('[data-label]')) return labelWalk(itemsIn(zoneId).filter(i => filter === 'all' || i.sectionId === filter).map(i => i.id), { title: `Label: ${esc(z.name)}` });
   };
   // live-refresh while open
   const unsub = subscribe(() => { if (document.body.contains(ov)) draw(); });
