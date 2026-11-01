@@ -25,11 +25,12 @@ export const PANTRY_SECTIONS = [
 export const DEFAULT_ZONES = [
   // ---- stove wall ----
   // French-door fridge as photographed: shelves down the middle (with the pull-out cheese
-  // drawer under the top shelf), two crispers, and three bins on each door. col: l | c | r
+  // fresh box under the top shelf with a small shelf below it), the main bottom shelf, two drawers side by side,
+  // and three bins on each door. col: l | c | r
   { id: 'fridge', name: 'Fridge', kind: 'fridge', slot: 'fridge', layout: 'french', sections: [
     { id: 'fr-dl-1', name: 'Left Door · Top', col: 'l' }, { id: 'fr-dl-2', name: 'Left Door · Middle', col: 'l' }, { id: 'fr-dl-3', name: 'Left Door · Bottom', col: 'l' },
-    { id: 'fr-top', name: 'Top Shelf', col: 'c' }, { id: 'fr-drawer', name: 'Cheese Drawer', col: 'c' }, { id: 'fr-mid', name: 'Middle Shelf', col: 'c' },
-    { id: 'fr-bot', name: 'Bottom Shelf', col: 'c' }, { id: 'fr-crisp-l', name: 'Left Crisper', col: 'c' }, { id: 'fr-crisp-r', name: 'Right Crisper', col: 'c' },
+    { id: 'fr-top', name: 'Top Shelf', col: 'c' }, { id: 'fr-drawer', name: 'Fresh Box', col: 'c' }, { id: 'fr-mid', name: 'Small Shelf', col: 'c' },
+    { id: 'fr-bot', name: 'Bottom Shelf', col: 'c' }, { id: 'fr-crisp-l', name: 'Vegetable Drawer', col: 'c' }, { id: 'fr-crisp-r', name: 'Produce Drawer', col: 'c' },
     { id: 'fr-dr-1', name: 'Right Door · Top', col: 'r' }, { id: 'fr-dr-2', name: 'Right Door · Middle', col: 'r' }, { id: 'fr-dr-3', name: 'Right Door · Gallon Bin', col: 'r' },
   ] },
   // Bottom freezer drawer: a slide-out top tray (ice trays, boxes) over the deep basket.

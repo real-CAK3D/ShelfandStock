@@ -8,7 +8,7 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 11;
+const VERSION = 12;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -41,6 +41,12 @@ const MIGRATIONS = {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
     }
+  },
+  // v11 → v12: fridge spots named like the real one (fresh box, small shelf, vegetable & produce drawers)
+  12: s => {
+    const z = s.zones.find(x => x.id === 'fridge'); if (!z) return;
+    const NEW = { 'fr-drawer': ['Cheese Drawer', 'Fresh Box'], 'fr-mid': ['Middle Shelf', 'Small Shelf'], 'fr-crisp-l': ['Left Crisper', 'Vegetable Drawer'], 'fr-crisp-r': ['Right Crisper', 'Produce Drawer'] };
+    for (const sec of z.sections) if (NEW[sec.id] && sec.name === NEW[sec.id][0]) sec.name = NEW[sec.id][1];
   },
   // v10 → v11: shelf counts from the real cabinets, a second big base on the corner wall, the laundry nook.
   // Only shelves still carrying their old default name are renamed; missing shelves and places are added.
@@ -536,7 +542,7 @@ export function seedSample() {
     add('bacon', 1),
     add('carrots', 2), add('celery', 1), add('lettuce', 1, { expires: addDays(T, 2) }),
     add('bell-peppers', 3), add('broccoli', 1), add('apples', 6), add('lemons', 3), add('strawberries', 1, { expires: addDays(T, 1) }),
-    // as photographed: top shelf, cheese drawer, middle/bottom shelves and both doors
+    // as photographed: top shelf, fresh box, small and bottom shelves, and both doors
     add('pickles', 1, { name: 'Sweet Relish', emoji: '🥒', sectionId: 'fr-top' }), add('bottled-water', 2, { sectionId: 'fr-top', unit: 'bottle' }),
     add('mayonnaise', 1, { sectionId: 'fr-top' }), add('bbq-sauce', 1, { sectionId: 'fr-top' }),
     add('cream-cheese', 8, { sectionId: 'fr-mid' }), add('tortillas', 1, { name: 'Pillsbury Crescent Rolls', emoji: '🥐', cat: 'bakery', foodId: null, sectionId: 'fr-mid', expires: addDays(T, 12) }),

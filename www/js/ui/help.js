@@ -30,7 +30,7 @@ const HELP = [
   ['.room-tab, .room-dots', '↔️ Rooms', 'Swipe the kitchen left to walk into the garage, or tap these tabs.'],
   ['[data-zone=g-upright]', '❄️ Garage upright freezer', 'The stand-up freezer in the garage: four shelves, a bottom basket and door racks. Good for bulk meat, the holiday turkey and overflow. Tap to open.'],
   ['[data-zone=g-fridge], [data-zone=g-fridge-fz]', '🧊 Garage fridge', 'The garage fridge with its freezer on top. Each part opens separately. Handy for drinks, party overflow and ice.'],
-  ['[data-zone=fridge]','🧊 Fridge', 'Tap to open. Inside, each shelf, crisper, the deli drawer and the door bins are tracked separately. The badge is the item count: orange means something expires soon, red means something already has.'],
+  ['[data-zone=fridge]','🧊 Fridge', 'Tap to open. Inside, swipe between the left door, the shelves and drawers, and the right door. Each shelf, the fresh box, both drawers and every door bin are tracked separately. The badge is the item count: orange means something expires soon, red means something already has.'],
   ['[data-zone=freezer]', '❄️ Freezer', 'Tap to open the freezer drawer. Moving an item here from the fridge extends its date automatically.'],
   ['.slot-pantry', '🚪 Pantry', 'Tall pantry shelves: bulk goods, grains and pasta, canned overflow, snacks, and drinks and potatoes on the floor.'],
   ['.counter-zone', '🍌 Countertop', 'What’s sitting out: the spice rack and oils by the stove, and the coffee station, bread box and fruit bowl in the corner. Tap to see it all.'],
@@ -84,6 +84,9 @@ const HELP = [
   ['.lrow', '🧾 List item', 'The note underneath explains why it’s here, like a planned recipe or running low.'],
 
   ['[data-tour=sync]', '☁️ Household sync', 'Start a household on one phone, then enter its code on the others. Everyone shares one kitchen, list and calendar, and changes sync automatically. It keeps working offline and catches up later.'],
+  ['[data-frgo]', '🚪 Fridge doors', 'Jump between the left door’s bins, the inside of the fridge and the right door’s bins. You can also just swipe.'],
+  ['.fr-box', '🧊 Fresh box', 'The small sliding drawer under the top shelf, good for deli meat and cheese.'],
+  ['.fr-crisper', '🥬 Drawers', 'The two drawers at the bottom: vegetables on the left, fruit and produce on the right.'],
   ['[data-zone^=laundry]', '🧺 Laundry nook', 'The cedar nook right of the island: two wraparound shelves and the counter on top of the washer and dryer. Tap a shelf or the counter to see what’s there.'],
   ['.closet-slot', '🚪 Pantry closet', 'The stand-up pantry left of the fridge: four sliding pull-out drawers and the floor for pots and bins. Tap to open it. Rename the drawers in Settings › Your storage › Pantry.'],
   ['[data-recalls]', '🛡️ Food recalls', 'Checks the FDA’s public list of US food recalls from the last 90 days against what’s in your kitchen and on your list. A barcode match is that exact product; a brand match means check the lot code on your package.'],

@@ -55,7 +55,7 @@ export function welcome() {
 
 const STEPS = [
   { view: 'kitchen', sel: '[data-tour=scene]', title: 'This is your kitchen', body: 'Every door opens. Tap one to swing it open and see what’s on each shelf. Badges show counts — orange means something expires soon, red means it already did.' },
-  { view: 'kitchen', sel: '[data-tour=fridge]', title: 'The fridge', body: 'Shelves, crispers, deli drawer and door bins, each one tracked separately. The freezer drawer sits below it.' },
+  { view: 'kitchen', sel: '[data-tour=fridge]', title: 'The fridge', body: 'Top shelf, the sliding fresh box, the small and bottom shelves, two drawers, and the door bins (swipe to them), each tracked separately. The freezer drawer sits below it.' },
   { view: 'kitchen', sel: '[data-tour=cabinets]', title: 'Cabinets & pantry', body: 'Baking and spices, canned goods, snacks, pots and pans. Rename them to match your real kitchen in Settings.' },
   { view: 'kitchen', sel: '[data-tour=holiday]', title: 'Holiday closet', body: 'Roasting pan, cookie cutters, the good platter. Tag them “thanksgiving” or “christmas” and they show up on that holiday with exactly where they are.' },
   { view: 'kitchen', sel: '[data-tour=garage-tab]', title: 'The pantry & the garage', body: 'Swipe right from the stove to the pantry closet next to the fridge, and once more for the garage’s upright freezer and fridge. Or tap Pantry or Garage up here.' },

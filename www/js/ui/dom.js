@@ -138,7 +138,8 @@ export function confetti(x = innerWidth / 2, y = innerHeight / 2, n = 26) {
     c.animate([
       { transform: 'translate(0,0) rotate(0)', opacity: 1 },
       { transform: `translate(${Math.cos(ang) * v}px, ${Math.sin(ang) * v + 160}px) rotate(${Math.random() * 720}deg)`, opacity: 0 },
-    ], { duration: 900 + Math.random() * 500, easing: 'cubic-bezier(.2,.6,.4,1)' }).onfinish = () => c.remove();
+    ], { duration: 900 + Math.random() * 500, easing: 'cubic-bezier(.2,.6,.4,1)', fill: 'forwards' });
+    setTimeout(() => c.remove(), 1450); // a timer, since animation callbacks don't fire in the background
   }
 }
 

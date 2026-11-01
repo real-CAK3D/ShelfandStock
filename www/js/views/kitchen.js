@@ -232,6 +232,33 @@ function openZoneAnimated(zoneId, el) {
   setTimeout(() => { openZone(zoneId, { origin: el }); setTimeout(() => el.classList.remove('opening'), 400); }, 380);
 }
 
+// ---------- the french-door fridge, opened ----------
+// Three pages you swipe between: the left door's bins, the inside (top shelf, the sliding fresh box with
+// a small shelf under it, the main bottom shelf, two drawers side by side), and the right door's bins.
+// Shelves added in Settings have no column, so they go inside.
+const FR_STYLE = { 'fr-drawer': 'box', 'fr-mid': 'small', 'fr-crisp-l': 'crisper', 'fr-crisp-r': 'crisper' };
+function frenchHTML(z, secHTML, page) {
+  const col = c => z.sections.filter(s => (s.col || 'c') === c);
+  const door = (c, name) => `<section class="fr-page fr-door-page"><div class="fr-door-liner">
+      <div class="fr-door-hinge ${c}"></div>
+      ${col(c).map(s => `<div class="fr-bin">${secHTML(s, true)}</div>`).join('') || '<p class="small muted" style="text-align:center">No bins on this door.</p>'}
+    </div><p class="fr-hint">${c === 'l' ? 'Swipe left for the inside →' : '← Swipe right for the inside'}</p></section>`;
+  // shelves top to bottom, then the drawers side by side at the very bottom
+  const drawers = col('c').filter(s => FR_STYLE[s.id] === 'crisper');
+  const inside = col('c').filter(s => FR_STYLE[s.id] !== 'crisper').map(s => ({ s, kind: FR_STYLE[s.id] || 'shelf' }));
+  if (drawers.length) inside.push({ crispers: drawers });
+  const insideHTML = inside.map(x => x.crispers
+    ? `<div class="fr-crispers">${x.crispers.map(s => `<div class="fr-crisper">${secHTML(s)}<span class="fr-lip"></span></div>`).join('')}</div>`
+    : x.kind === 'box' ? `<div class="fr-box">${secHTML(x.s)}<span class="fr-lip"></span></div>`
+    : `<div class="fr-shelf ${x.kind === 'small' ? 'small' : ''}">${secHTML(x.s)}</div>`).join('');
+  return `<div class="fr-tabs">${['‹ Left door', 'Inside', 'Right door ›'].map((t, i) => `<button class="${i === page ? 'on' : ''}" data-frgo="${i}">${t}</button>`).join('')}</div>
+    <div class="fr-pager" data-frpager>
+      ${door('l')}
+      <section class="fr-page fr-main"><div class="fr-cavity">${insideHTML}</div><p class="fr-hint">← Doors on both sides →</p></section>
+      ${door('r')}
+    </div>`;
+}
+
 // ---------- inside a zone ----------
 export function openZone(zoneId, { origin, highlight, section } = {}) {
   const z = state.zones.find(z => z.id === zoneId);
@@ -242,6 +269,10 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
   ov.className = 'inside ' + (cold ? 'cold' : 'wooden');
   if (origin) { const r = origin.getBoundingClientRect(); ov.style.setProperty('--ox', r.left + r.width / 2 + 'px'); ov.style.setProperty('--oy', r.top + r.height / 2 + 'px'); }
   let filter = section || 'all';
+  // french-door fridge: 0 = left door, 1 = inside (where it opens), 2 = right door
+  const colOf = sid => z.sections.find(x => x.id === sid)?.col || 'c';
+  const hlItem = highlight && state.items.find(i => i.id === highlight);
+  let frPage = hlItem ? { l: 0, c: 1, r: 2 }[colOf(hlItem.sectionId)] : 1;
   const secHTML = (s, door = false) => {
     const its = state.items.filter(i => i.sectionId === s.id);
     const title = door ? s.name.replace(/^.*Door · /, '') : s.name;
@@ -254,6 +285,8 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
               </div>
             </div>`;
   };
+  // put the fridge back on the page you were looking at (needs the overlay on screen to know its width)
+  const syncPager = () => { const pg = ov.querySelector('[data-frpager]'); if (pg && pg.clientWidth) pg.scrollLeft = frPage * pg.clientWidth; };
   const draw = () => {
     const secs = z.sections.filter(s => filter === 'all' || s.id === filter);
     const all = itemsIn(zoneId);
@@ -271,14 +304,20 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
             <button class="chip ${filter === 'all' ? 'on' : ''}" data-sec="all">All <span class="n">${all.length}</span></button>
             ${z.sections.map(s => `<button class="chip ${filter === s.id ? 'on' : ''}" data-sec="${s.id}">${esc(s.name)} <span class="n">${state.items.filter(i => i.sectionId === s.id).length}</span></button>`).join('')}
           </div>
-          ${z.layout === 'french' && filter === 'all' ? `<div class="fr-grid">
-            <div class="fr-door">${z.sections.filter(s => s.col === 'l').map(s => secHTML(s, true)).join('')}</div>
-            <div class="fr-center">${z.sections.filter(s => s.col === 'c').map(s => secHTML(s)).join('')}</div>
-            <div class="fr-door">${z.sections.filter(s => s.col === 'r').map(s => secHTML(s, true)).join('')}</div>
-          </div>` : secs.map(s => secHTML(s)).join('')}
+          ${z.layout === 'french' && filter === 'all' ? frenchHTML(z, secHTML, frPage) : secs.map(s => secHTML(s)).join('')}
           ${!all.length ? `<div class="empty" style="color:inherit;opacity:.8"><span class="big">${cold ? '🧊' : '🕸️'}</span>Nothing in here yet.</div>` : ''}
         </div>
       </div>`;
+    const pager = ov.querySelector('[data-frpager]');
+    if (pager) {
+      syncPager();
+      let t;
+      pager.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => {
+        const n = Math.round(pager.scrollLeft / pager.clientWidth);
+        if (n !== frPage) { frPage = n; haptic(8); }
+        ov.querySelectorAll('[data-frgo]').forEach(b => b.classList.toggle('on', Number(b.dataset.frgo) === frPage));
+      }, 60); }, { passive: true });
+    }
     if (highlight) {
       const el = ov.querySelector(`[data-item="${highlight}"]`);
       if (el) setTimeout(() => { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.animate([{ transform: 'scale(1)', boxShadow: '0 0 0 0 #e7c877' }, { transform: 'scale(1.18)', boxShadow: '0 0 0 6px #e7c877' }, { transform: 'scale(1)', boxShadow: '0 0 0 3px #e7c877' }], { duration: 900, iterations: 2 }); }, 500);
@@ -287,9 +326,13 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
   };
   draw();
   document.body.appendChild(ov);
-  const close = () => { ov.querySelector('.inside-panel').animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.3)', opacity: 0 }], { duration: 260, easing: 'ease-in' }).onfinish = () => { ov.remove(); unsub(); }; };
+  syncPager();
+  // remove on a timer too: animation callbacks don't fire while the app is in the background
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; ov.querySelector('.inside-panel').animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.3)', opacity: 0 }], { duration: 260, easing: 'ease-in', fill: 'forwards' }); setTimeout(() => { ov.remove(); unsub(); }, 270); };
   ov.onclick = e => {
     if (e.target === ov || e.target.closest('[data-x]')) return close();
+    const fg = e.target.closest('[data-frgo]'); if (fg) { const pg = ov.querySelector('[data-frpager]'); haptic(); return pg.scrollTo({ left: Number(fg.dataset.frgo) * pg.clientWidth, behavior: 'smooth' }); }
     const s = e.target.closest('[data-sec]'); if (s) { filter = s.dataset.sec; haptic(); return draw(); }
     const it = e.target.closest('[data-item]'); if (it) return showItem(it.dataset.item);
     const ad = e.target.closest('[data-addsec]'); if (ad) return actions.addItem({ sectionId: ad.dataset.addsec });

@@ -825,3 +825,39 @@ img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: co
 .d-washer .panel::after, .d-dryer .panel::after { content: ''; position: absolute; left: 44%; top: 22%; width: 12%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff, #c9ccd0); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
 .d-washer .porthole, .d-dryer .porthole { position: absolute; left: 50%; top: 58%; width: 66%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, #3d464f 0 52%, #9aa1a8 53% 60%, #d4d7da 61% 72%, #c3c7cb 73%); box-shadow: 0 2px 4px rgba(0,0,0,.25); }
 .d-dryer .porthole { background: radial-gradient(circle at 42% 40%, #f0f2f4 0 10%, #aab1b8 30%, #7d868f 52%, #9aa1a8 53% 60%, #d4d7da 61% 72%, #c3c7cb 73%); }
+
+/* ---- the french-door fridge, opened: swipe between the left door, the inside and the right door ---- */
+.fr-tabs { display: flex; gap: 4px; margin: 4px 0 10px; padding: 3px; border-radius: 12px; background: rgba(150,180,200,.22); }
+.fr-tabs button { flex: 1; height: 32px; border-radius: 9px; font: 700 12.5px Inter, sans-serif; color: #4c5e6c; transition: background .25s, color .25s; }
+.fr-tabs button.on { background: #fff; color: #23313b; box-shadow: 0 1px 4px rgba(60,90,110,.25); }
+.fr-pager { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; margin: 0 -14px; }
+.fr-pager::-webkit-scrollbar { display: none; }
+.fr-page { flex: 0 0 100%; scroll-snap-align: center; scroll-snap-stop: always; padding: 0 14px 8px; min-width: 0; }
+.fr-hint { text-align: center; font-size: 11.5px; color: #7d909e; margin: 8px 0 0; }
+/* the cavity: white liner, a light at the top, glass shelves */
+.fr-cavity { position: relative; border-radius: 18px; padding: 10px 10px 12px; background: linear-gradient(180deg, #ffffff, #eef5f9 60%, #e3edf3); box-shadow: inset 0 0 0 2px #dbe6ed, inset 0 14px 28px rgba(255,255,255,.95), 0 4px 14px rgba(70,110,140,.18); }
+.fr-cavity::before { content: ''; position: absolute; left: 30%; right: 30%; top: 4px; height: 5px; border-radius: 4px; background: #fffbe8; box-shadow: 0 0 18px 6px rgba(255,248,215,.9); }
+.fr-shelf .shelf-sec, .fr-box .shelf-sec, .fr-crisper .shelf-sec { margin: 0; padding: 6px 4px 12px; }
+.fr-shelf { margin: 8px 0 10px; }
+.fr-shelf .shelf-sec::after { left: -6px; right: -6px; height: 6px; background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(190,220,236,.75)) !important; box-shadow: 0 3px 6px rgba(80,120,150,.25), inset 0 0 0 1px rgba(160,200,222,.8) !important; }
+.fr-shelf.small { margin-left: 0; width: 72%; }
+/* the sliding fresh box: a clear drawer with a front lip */
+.fr-box, .fr-crisper { position: relative; border-radius: 10px; background: linear-gradient(180deg, rgba(225,240,248,.55), rgba(200,225,238,.75)); box-shadow: inset 0 0 0 1.5px rgba(150,190,215,.8), 0 2px 5px rgba(80,120,150,.15); padding: 0 4px 10px; margin: 6px 0 8px; }
+.fr-box .shelf-sec::after, .fr-crisper .shelf-sec::after { display: none; }
+.fr-lip { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; border-radius: 0 0 10px 10px; background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(200,222,236,.95)); box-shadow: inset 0 1px 0 rgba(150,190,215,.8); pointer-events: none; }
+.fr-lip::after { content: ''; position: absolute; left: 35%; right: 35%; top: 4px; height: 3px; border-radius: 3px; background: rgba(120,150,170,.55); }
+/* two drawers side by side at the bottom, frosted */
+.fr-crispers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.fr-crisper { margin: 0; min-width: 0; background: linear-gradient(180deg, rgba(232,244,232,.7), rgba(205,228,212,.85)); }
+.fr-crisper h3 { font-size: 11.5px !important; }
+.fr-crisper .shelf-items { gap: 5px; }
+.fr-crisper .jar { width: calc(50% - 3px); }
+.fr-main .jar { width: 70px; }
+/* the doors: a white liner with clear bins down it */
+.fr-door-liner { position: relative; border-radius: 18px; padding: 12px 14px; background: linear-gradient(180deg, #ffffff, #edf3f7); box-shadow: inset 0 0 0 2px #dbe6ed, 0 4px 14px rgba(70,110,140,.18); }
+.fr-door-hinge { position: absolute; top: 18px; bottom: 18px; width: 5px; border-radius: 3px; background: linear-gradient(90deg, #c9d3da, #9aa6af); }
+.fr-door-hinge.l { left: 4px; } .fr-door-hinge.r { right: 4px; }
+.fr-bin { position: relative; margin: 6px 0 14px; padding: 2px 6px 8px; border-radius: 6px 6px 12px 12px; background: linear-gradient(180deg, rgba(220,236,246,.35), rgba(196,222,238,.8)); box-shadow: inset 0 0 0 1.5px rgba(150,190,215,.85), 0 3px 6px rgba(80,120,150,.18); }
+.fr-bin .shelf-sec { margin: 0; padding: 4px 0 2px; }
+.fr-bin .shelf-sec::after { display: none; }
+.fr-bin .jar { width: 70px; }
