@@ -58,7 +58,7 @@ const STEPS = [
   { view: 'kitchen', sel: '[data-tour=fridge]', title: 'The fridge', body: 'Shelves, crispers, deli drawer and door bins, each one tracked separately. The freezer drawer sits below it.' },
   { view: 'kitchen', sel: '[data-tour=cabinets]', title: 'Cabinets & pantry', body: 'Baking and spices, canned goods, snacks, pots and pans. Rename them to match your real kitchen in Settings.' },
   { view: 'kitchen', sel: '[data-tour=holiday]', title: 'Holiday closet', body: 'Roasting pan, cookie cutters, the good platter. Tag them “thanksgiving” or “christmas” and they show up on that holiday with exactly where they are.' },
-  { view: 'kitchen', sel: '[data-tour=garage-tab]', title: 'Swipe to the garage', body: 'Swipe the kitchen left, or tap Garage, to get to the upright freezer and the garage fridge with its top freezer. Every door opens the same way.' },
+  { view: 'kitchen', sel: '[data-tour=garage-tab]', title: 'The pantry & the garage', body: 'Swipe right from the stove to the pantry closet next to the fridge, and once more for the garage’s upright freezer and fridge. Or tap Pantry or Garage up here.' },
   { view: 'kitchen', sel: '[data-act=me]', title: 'That’s you', body: 'Everything you do is signed with your name, so the house sees things like “Andrew requested coffee”. Tap your picture to switch person or change your PIN.' },
   { view: 'kitchen', sel: '[data-act=help]', title: 'Help, anytime', body: 'Tap ? and then tap anything on screen. Shelf & Stock explains what it is and how to use it.' },
   { view: 'kitchen', sel: '.fab', title: 'Add groceries', body: 'Search 200+ foods, scan a barcode for the real label and nutrition, or add anything custom. Shelf & Stock suggests the shelf and an expiration date.' },

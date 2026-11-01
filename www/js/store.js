@@ -1,14 +1,14 @@
 // App state: one JSON document persisted to localStorage, with versioned migrations and a
 // tiny pub/sub. Every mutation goes through `update()` so views re-render consistently.
 
-import { DEFAULT_ZONES, suggestSection, LEGACY_SECTIONS } from './data/layout.js';
+import { DEFAULT_ZONES, suggestSection, LEGACY_SECTIONS, PANTRY_SECTIONS } from './data/layout.js';
 import { FOOD_BY_ID, CAT_BY_ID, matchFood, slug } from './data/foods.js';
 import { BUILTIN_RECIPES } from './data/recipes.js';
 import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 9;
+const VERSION = 10;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -40,6 +40,17 @@ const MIGRATIONS = {
     for (const it of s.items) {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones);
+    }
+  },
+  // v9 → v10: the stand-up pantry closet left of the fridge (4 shelves + floor); only renames what's still the old default
+  10: s => {
+    let z = s.zones.find(x => x.id === 'pantry');
+    if (!z) { z = structuredClone(DEFAULT_ZONES.find(x => x.id === 'pantry')); s.zones.splice(Math.max(0, s.zones.findIndex(x => x.id === 'holiday')), 0, z); return; }
+    const OLD = { 'pa-1': 'Top Shelf · Bulk', 'pa-2': 'Grains & Pasta', 'pa-3': 'Canned Overflow', 'pa-4': 'Snacks', 'pa-5': 'Floor · Drinks & Potatoes' };
+    if (z.name === 'Pantry') { z.name = 'Pantry Closet'; z.short = 'Pantry'; }
+    for (const d of PANTRY_SECTIONS) {
+      const sec = z.sections.find(x => x.id === d.id);
+      if (!sec) z.sections.push({ ...d }); else if (sec.name === OLD[d.id]) sec.name = d.name;
     }
   },
   // v8 → v9: price tracking from receipts
@@ -539,9 +550,11 @@ export function seedSample() {
     add('bread', 1, { expires: addDays(T, 3) }), add('bananas', 5, { expires: addDays(T, 2) }), add('avocados', 2), add('coffee', 1, { minQty: 1 }),
     add('spaghetti', 2), add('penne', 1), add('white-rice', 3), add('elbow-macaroni', 1), add('tortillas', 1),
     add('potatoes', 5), add('onions', 4), add('garlic', 2), add('soda', 1), add('bottled-water', 1),
-    add('slow-cooker', 1), add('stand-mixer', 1), add('meat-thermometer', 1), add('pie-dish', 1),
-    add('aluminum-foil', 1), add('zip-bags', 2), add('dish-soap', 1, { minQty: 1 }), add('paper-towels', 1),
-    add('roasting-pan', 1, { tags: ['thanksgiving'] }), add('turkey-baster', 1, { tags: ['thanksgiving'] }), add('gravy-boat', 1, { tags: ['thanksgiving', 'christmas'] }),
+    add('slow-cooker', 1, { name: 'Crockery Chef Slow Cooker', sectionId: 'pa-3' }), add('stand-mixer', 1), add('meat-thermometer', 1), add('pie-dish', 1),
+    add('aluminum-foil', 1), add('zip-bags', 2), add('dish-soap', 1, { minQty: 1 }), add('paper-towels', 2, { name: 'Bulk Paper Towels', sectionId: 'pa-4' }),
+    add('paper-towels', 3, { name: 'Reusable Shopping Bags', emoji: '🛍️', foodId: null, cat: 'household', unit: 'ea', sectionId: 'pa-1', noExpiry: true, expires: null }),
+    add('coffee', 1, { name: 'Folgers (backup can)', sectionId: 'pa-2' }),
+    add('roasting-pan', 1, { tags: ['thanksgiving'], sectionId: 'pa-5', notes: 'Pantry floor, with the big pots' }), add('turkey-baster', 1, { tags: ['thanksgiving'] }), add('gravy-boat', 1, { tags: ['thanksgiving', 'christmas'] }),
     add('cookie-cutters', 1, { tags: ['christmas'], notes: 'Snowflake, tree, gingerbread man' }), add('holiday-napkins', 2, { tags: ['christmas'] }),
     add('serving-platter', 2, { sectionId: 'afl-1', notes: 'The good platters — up top, need the step stool' }), add('cake-stand', 1, { sectionId: 'afr-1' }), add('punch-bowl', 1, { tags: ['party'] }), add('birthday-candles', 1, { tags: ['party'] }),
   ];

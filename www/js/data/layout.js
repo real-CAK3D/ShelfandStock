@@ -17,6 +17,11 @@ export const ZONE_KINDS = {
 
 const shelves = (p, names) => names.map((name, i) => ({ id: `${p}-${i + 1}`, name }));
 
+export const PANTRY_SECTIONS = [
+  { id: 'pa-1', name: 'Top Shelf · Bags' }, { id: 'pa-2', name: 'Shelf 2 · Pull-out Tray' }, { id: 'pa-3', name: 'Shelf 3 · Pull-out Tray' },
+  { id: 'pa-4', name: 'Shelf 4 · Pull-out Tray' }, { id: 'pa-5', name: 'Floor · Pots & Bins' },
+];
+
 export const DEFAULT_ZONES = [
   // ---- stove wall ----
   // French-door fridge as photographed: shelves down the middle (with the pull-out cheese
@@ -80,10 +85,8 @@ export const DEFAULT_ZONES = [
     { id: 'gu-bin', name: 'Bottom Basket' }, { id: 'gu-door', name: 'Door Racks' },
   ] },
   // ---- elsewhere ----
-  { id: 'pantry', name: 'Pantry', kind: 'pantry', slot: 'pantry', sections: [
-    { id: 'pa-1', name: 'Top Shelf · Bulk' }, { id: 'pa-2', name: 'Grains & Pasta' }, { id: 'pa-3', name: 'Canned Overflow' },
-    { id: 'pa-4', name: 'Snacks' }, { id: 'pa-5', name: 'Floor · Drinks & Potatoes' },
-  ] },
+  // stand-up pantry closet left of the fridge: four shelves (three with white pull-out trays) and the floor
+  { id: 'pantry', name: 'Pantry Closet', short: 'Pantry', kind: 'pantry', slot: 'pantry', sections: PANTRY_SECTIONS },
   { id: 'holiday', name: 'Holiday Closet', kind: 'holiday', slot: 'holiday', sections: [
     { id: 'ho-thanks', name: 'Thanksgiving Bin' }, { id: 'ho-xmas', name: 'Christmas Bin' },
     { id: 'ho-party', name: 'Party Supplies' }, { id: 'ho-serve', name: 'Serving Ware' },
@@ -141,7 +144,7 @@ export function suggestSection(food, zones) {
   if (cat === 'snacks') return pick('skr-2');
   if (cat === 'beverages') return /coffee/.test(id) ? pick('ct-coffee') : /tea/.test(id) ? pick('skl-2') : pick('pa-5');
   if (cat === 'grains') return /cereal|oat|pancake/.test(id) ? pick('bgr-1') : pick('cu-2');
-  if (cat === 'household') return /soap|trash|towel|sponge/.test(id) ? pick('sink-1') : pick('drl-1');
-  if (cat === 'kitchenware') return /slow|mixer|roast/.test(id) ? pick('isl-2') : /thermometer/.test(id) ? pick('drr-1') : pick('sd-1', 'isl-1');
+  if (cat === 'household') return /paper-towel|napkin|bag/.test(id) && !/zip/.test(id) ? pick('pa-4') : /soap|trash|towel|sponge/.test(id) ? pick('sink-1') : pick('drl-1');
+  if (cat === 'kitchenware') return /slow/.test(id) ? pick('pa-3') : /roast|stock-?pot|dutch/.test(id) ? pick('pa-5') : /mixer/.test(id) ? pick('isl-2') : /thermometer/.test(id) ? pick('drr-1') : pick('sd-1', 'isl-1');
   return pick('pa-3');
 }

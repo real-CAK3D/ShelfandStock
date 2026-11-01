@@ -84,6 +84,7 @@ const HELP = [
   ['.lrow', '🧾 List item', 'The note underneath explains why it’s here, like a planned recipe or running low.'],
 
   ['[data-tour=sync]', '☁️ Household sync', 'Start a household on one phone, then enter its code on the others. Everyone shares one kitchen, list and calendar, and changes sync automatically. It keeps working offline and catches up later.'],
+  ['.closet-slot', '🚪 Pantry closet', 'The stand-up pantry left of the fridge: a top shelf, three shelves with pull-out trays, and the floor for pots and bins. Tap to open it. Rename the shelves in Settings › Your storage › Pantry.'],
   ['[data-recalls]', '🛡️ Food recalls', 'Checks the FDA’s public list of US food recalls from the last 90 days against what’s in your kitchen and on your list. A barcode match is that exact product; a brand match means check the lot code on your package.'],
   ['[data-unitprice]', '⚖️ Which is cheaper?', 'Type the price and size from two shelf tags and it tells you which is cheaper per ounce, fluid ounce or count, even across units like lb vs oz.'],
   ['[data-season-add]', '🌱 In season', 'Produce that’s in season this month, so it’s usually cheaper and tastier. Tap to add it to the list.'],

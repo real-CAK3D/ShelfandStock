@@ -24,6 +24,13 @@ const ROOMS = [
     Z('g-upright', 50, 14, 44, 75, { type: 'steel', label: '❄️ Upright Freezer', tour: 'garage' }),
     D('g-floor', 0, 89, 100, 11),
   ] },
+  // the stand-up pantry closet just left of the fridge (the fridge's edge peeks in on the right)
+  { id: 'pantry', label: '🚪 Pantry', parts: [
+    D('closet-frame', 12, 1.5, 56, 86.5),
+    Z('pantry', 15, 4, 50, 84, { type: 'closet', tour: 'pantry' }),
+    D('cab-edge', 84, 2, 30, 13), D('fridge-edge', 84, 16, 30, 72, '<i></i>'),
+    D('floor', 0, 88, 100, 12),
+  ] },
   { id: 'stove', label: '🍳 Stove', parts: [
     Z('above-fridge-l', 1, 2, 17, 13), Z('above-fridge-r', 18.5, 2, 17, 13, { hinge: 'right' }),
     Z('fridge', 1, 16, 34.5, 48, { type: 'french', tour: 'fridge' }),
@@ -65,12 +72,12 @@ const ROOMS = [
     D('island-top', 40, 63, 58, 5), Z('island', 43, 68, 52, 21, { finish: 'espresso' }),
   ] },
 ];
-const HOME_ROOM = 1;
+const HOME_ROOM = 2; // the stove wall; swipe right for the pantry, then the garage
 let room = HOME_ROOM; // kept across re-renders
 export const showRoom = n => { room = n; };
 export const roomOfZone = zoneId => ROOMS.findIndex(r => r.parts.some(p => p.zone === zoneId));
-// the walls in kitchen order (stove first, garage last), for grouping storage in Settings
-export const roomList = () => [...ROOMS.slice(HOME_ROOM), ...ROOMS.slice(0, HOME_ROOM)].map(r => ({ id: r.id, label: r.label, zones: r.parts.filter(p => p.zone).map(p => p.zone) }));
+// the walls in walking order (stove, sink, corner, then back past the pantry to the garage), for grouping storage in Settings
+export const roomList = () => [...ROOMS.slice(HOME_ROOM), ...ROOMS.slice(0, HOME_ROOM).reverse()].map(r => ({ id: r.id, label: r.label, zones: r.parts.filter(p => p.zone).map(p => p.zone) }));
 const DRAWN = new Set(ROOMS.flatMap(r => r.parts.map(p => p.zone).filter(Boolean)));
 const itemsIn = zoneId => { const z = state.zones.find(z => z.id === zoneId); if (!z) return []; const ids = new Set(z.sections.map(s => s.id)); return state.items.filter(i => ids.has(i.sectionId)); };
 
@@ -107,10 +114,13 @@ function part(p) {
     case 'drawer': doors = `<button class="door drawer oak" ${aria}><span class="knob c"></span></button>`; break;
     case 'bowl': return `<button class="pos pet-bowl" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="kibble"></span>${badge(id)}</button>`;
     case 'bone': return `<button class="pos pet-bone" data-zone="${id}" style="${pct(p.box)}" ${aria}>🦴${badge(id)}</button>`;
+    case 'closet': doors = `<button class="door cherry" ${aria}><span class="knob" style="right:8%;top:50%;width:11px;height:11px"></span><span class="label">${label}</span></button>`; break;
     case 'counter': return `<button class="pos counter-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}>${itemsIn(id).slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('')}</button>`;
     default: doors = `<button class="door ${fin} ${right ? 'right' : ''}" ${aria}><span class="pull v" style="${right ? 'left' : 'right'}:7px;${p.box[1] < 40 ? 'bottom' : 'top'}:10px"></span><span class="label">${label}</span></button>`;
   }
-  return `<div class="pos slot ${cold ? 'cold' : ''} ${p.type || 'door'}-slot ${p.cls || ''}" data-zone="${id}" ${p.tour ? `data-tour="${p.tour}"` : ''} style="${pct(p.box)}"><div class="interior">${peek(id, 12)}</div>${doors}${badge(id)}</div>`;
+  // the closet shows each shelf behind the door, the rest just a peek of what's inside
+  const inside = p.type === 'closet' ? z.sections.map(sec => `<div class="cl-shelf">${state.items.filter(i => i.sectionId === sec.id).slice(0, 6).map(i => `<span>${i.emoji}</span>`).join('')}</div>`).join('') : peek(id, 12);
+  return `<div class="pos slot ${cold ? 'cold' : ''} ${p.type || 'door'}-slot ${p.cls || ''}" data-zone="${id}" ${p.tour ? `data-tour="${p.tour}"` : ''} style="${pct(p.box)}"><div class="interior">${inside}</div>${doors}${badge(id)}</div>`;
 }
 
 const roomCount = r => r.parts.reduce((a, p) => a + (p.zone && !p.deco ? itemsIn(p.zone).length : 0), 0);
