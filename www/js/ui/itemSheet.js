@@ -406,9 +406,9 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
         </div>
       </div>
       <div data-pane="snap" class="hidden">
-        <p class="small muted" style="margin-top:0">Snap the front, then the barcode or date label if you like. One thing, up to three photos. It reads the barcode, looks it up, reads the best-by date, and reads the name off the package when no database knows it.</p>
-        <div class="row" style="gap:8px"><button type="button" class="btn btn-brass grow" data-golive>🎥 Live camera</button><label class="btn btn-wood wood-mid">📸<input type="file" accept="image/*" capture="environment" data-snap hidden></label><label class="btn btn-ghost" title="Pick up to 3 photos">🖼️<input type="file" accept="image/*" multiple data-snap hidden></label></div>
-        <div data-live></div>
+        <p class="small muted" style="margin-top:0">Point the camera at it: as soon as it sees the barcode it shows what it is, before you take the picture. Take the front, then the barcode or date label if you like (up to three). It also reads the best-by date, and the name off the package when no database knows it.</p>
+        <div class="row" style="gap:8px"><button type="button" class="btn btn-brass grow" data-golive>📷 Camera</button><label class="btn btn-ghost grow">🖼️ Gallery<input type="file" accept="image/*" multiple data-snap hidden></label></div>
+        <div data-livecam></div>
         <div class="snap-tray" data-snaptray></div>
         <div data-snapres></div>
       </div>
@@ -474,12 +474,14 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
       let snaps = [];
       const tray = $('[data-snaptray]', b);
       const drawTray = () => {
-        tray.innerHTML = snaps.length ? snaps.map((f, i) => `<span class="snap-thumb"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" data-unsnap="${i}" aria-label="Remove photo">×</button></span>`).join('') + (snaps.length < 3 ? `<label class="snap-add">＋<small>barcode or date</small><input type="file" accept="image/*" capture="environment" data-snapmore hidden></label>` : '') : '';
-        tray.querySelector('[data-snapmore]')?.addEventListener('change', e => { if (e.target.files[0]) { snaps.push(e.target.files[0]); drawTray(); snapFlow(snaps, b, pick); } });
+        tray.innerHTML = snaps.length ? snaps.map((f, i) => `<span class="snap-thumb"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" data-unsnap="${i}" aria-label="Remove photo">×</button></span>`).join('') + (snaps.length < 3 ? `<button type="button" class="snap-add" data-snapmore>＋<small>barcode or date</small></button>` : '') : '';
+        tray.querySelector('[data-snapmore]')?.addEventListener('click', openLive);
         tray.querySelectorAll('[data-unsnap]').forEach(x => x.onclick = () => { snaps.splice(Number(x.dataset.unsnap), 1); drawTray(); if (snaps.length) snapFlow(snaps, b, pick); else $('[data-snapres]', b).innerHTML = ''; });
       };
       b.querySelectorAll('[data-snap]').forEach(inp => inp.onchange = () => { if (inp.files.length) { snaps = [...snaps, ...inp.files].slice(-3); drawTray(); snapFlow(snaps, b, pick); } inp.value = ''; });
-      $('[data-golive]', b).onclick = () => liveSnap(b, pick, file => { snaps = [...snaps, file].slice(-3); drawTray(); snapFlow(snaps, b, pick); });
+      // the live camera: shows what it is while you aim; the shutter adds the photo, and it stays open for the next one
+      function openLive() { liveSnap(b, pick, file => { snaps = [...snaps, file].slice(-3); drawTray(); snapFlow(snaps, b, pick); }); }
+      $('[data-golive]', b).onclick = openLive;
     },
     onClose: () => { stopScan(); stopLive(); },
   });
@@ -493,14 +495,21 @@ let liveStop = null;
 function stopLive() { liveStop?.(); liveStop = null; }
 async function liveSnap(b, pick, addPhoto) {
   stopLive();
-  const box = $('[data-live]', b);
-  box.innerHTML = `<div class="live-cam"><video playsinline muted></video><div class="reticle"></div>
+  // its own marker: [data-live] is the household activity strip, which main.js redraws on every update
+  const box = $('[data-livecam]', b);
+  // a see-through poster, or Android shows a big grey play button until the first frame arrives
+  box.innerHTML = `<div class="live-cam"><video playsinline muted autoplay poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video><div class="reticle"></div>
       <div class="live-card" data-livecard>Point at the barcode…</div>
       <div class="live-bar"><button type="button" class="btn btn-ghost btn-sm" data-liveclose>Close</button><button type="button" class="live-shutter" data-shutter aria-label="Take the picture"></button><span style="width:64px"></span></div></div>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'end' }); // the shutter sits at the bottom of the picture
   const video = $('video', box), card = $('[data-livecard]', box);
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
-  catch { box.innerHTML = '<div class="where-banner">📷 <span>The camera isn’t available here. Use Take a picture instead.</span></div>'; return; }
+  catch {
+    box.innerHTML = `<div class="where-banner">📷 <span>The live camera isn’t available. <label class="link" style="cursor:pointer">Use the phone’s camera<input type="file" accept="image/*" capture="environment" data-livefallback hidden></label> instead.</span></div>`;
+    box.querySelector('[data-livefallback]').onchange = e => { if (e.target.files[0]) addPhoto(e.target.files[0]); };
+    return;
+  }
   video.srcObject = stream; await video.play().catch(() => { });
   let alive = true, last = '', busy = false, found = null;
   const det = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] }) : null;

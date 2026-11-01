@@ -61,7 +61,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private static final String ORIGIN = "https://appassets.androidplatform.net";
     private static final String BG = "#2A180D";
-    private static final int REQ_FILE = 1, REQ_CAM = 2, REQ_LOC = 3;
+    private static final int REQ_FILE = 1, REQ_CAM = 2, REQ_LOC = 3, REQ_SHOT = 4, REQ_PICK = 5;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCb;
@@ -88,6 +88,8 @@ public class MainActivity extends Activity {
         });
         setContentView(root);
 
+        // debug builds can be inspected from chrome://inspect
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) WebView.setWebContentsDebuggingEnabled(true);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -155,6 +157,15 @@ public class MainActivity extends Activity {
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> cb, FileChooserParams params) {
                 if (fileCb != null) fileCb.onReceiveValue(null);
                 fileCb = cb;
+                chooser = params;
+                // <input capture> = the camera; an image input without it = the photo gallery; anything else = files
+                boolean images = false;
+                for (String t : params.getAcceptTypes()) if (t != null && t.startsWith("image")) images = true;
+                if (images && params.isCaptureEnabled()) {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{ Manifest.permission.CAMERA }, REQ_SHOT); return true; }
+                    return openCamera();
+                }
+                if (images) return openGallery(params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
                 try { startActivityForResult(params.createIntent(), REQ_FILE); } catch (ActivityNotFoundException e) { fileCb = null; return false; }
                 return true;
             }
@@ -390,10 +401,65 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---- photos: the real camera for "take a picture", the photo picker for "gallery" ----
+    private WebChromeClient.FileChooserParams chooser;
+    private Uri shotUri;
+
+    private boolean openCamera() {
+        try {
+            File dir = new File(getCacheDir(), "shots"); dir.mkdirs();
+            File f = new File(dir, "shot-" + System.currentTimeMillis() + ".jpg");
+            shotUri = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+            Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            i.putExtra(MediaStore.EXTRA_OUTPUT, shotUri);
+            i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(i, REQ_SHOT);
+            return true;
+        } catch (Exception e) {
+            // no camera app: fall back to the gallery rather than doing nothing
+            return openGallery(false);
+        }
+    }
+
+    private boolean openGallery(boolean multiple) {
+        try {
+            Intent i;
+            if (Build.VERSION.SDK_INT >= 33) {
+                i = new Intent(MediaStore.ACTION_PICK_IMAGES);
+                if (multiple) i.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 3);
+            } else {
+                i = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
+                if (multiple) i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            }
+            startActivityForResult(i, REQ_PICK);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            try { startActivityForResult(chooser.createIntent(), REQ_FILE); return true; } catch (Exception e2) { if (fileCb != null) fileCb.onReceiveValue(null); fileCb = null; return false; }
+        }
+    }
+
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         if (req == REQ_FILE && fileCb != null) {
             fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
+            fileCb = null;
+            return;
+        }
+        if (req == REQ_SHOT && fileCb != null) {
+            fileCb.onReceiveValue(result == RESULT_OK && shotUri != null ? new Uri[]{ shotUri } : null);
+            fileCb = null;
+            return;
+        }
+        if (req == REQ_PICK && fileCb != null) {
+            Uri[] got = null;
+            if (result == RESULT_OK && data != null) {
+                if (data.getClipData() != null) {
+                    int n = Math.min(3, data.getClipData().getItemCount());
+                    got = new Uri[n];
+                    for (int k = 0; k < n; k++) got[k] = data.getClipData().getItemAt(k).getUri();
+                } else if (data.getData() != null) got = new Uri[]{ data.getData() };
+            }
+            fileCb.onReceiveValue(got);
             fileCb = null;
             return;
         }
@@ -402,6 +468,12 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] grants) {
+        if (req == REQ_SHOT) {
+            boolean ok = grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED;
+            if (ok) openCamera();
+            else { Toast.makeText(this, "Camera permission is needed to take pictures", Toast.LENGTH_LONG).show(); if (fileCb != null) fileCb.onReceiveValue(null); fileCb = null; }
+            return;
+        }
         if (req == REQ_LOC && geoCb != null) {
             boolean ok = false;
             for (int g : grants) if (g == PackageManager.PERMISSION_GRANTED) ok = true;
