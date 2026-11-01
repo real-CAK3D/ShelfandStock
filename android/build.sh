@@ -12,5 +12,5 @@ export GRADLE_USER_HOME="G:/.gradle"
 rm -f app/build/outputs/apk/debug/app-debug.apk  # debug builds reuse the old file and can leave dead space in it
 ./gradlew --no-daemon -q assembleDebug
 mkdir -p ../dist
-cp app/build/outputs/apk/debug/app-debug.apk ../dist/ShelfAndStock-1.6.0.apk
+cp app/build/outputs/apk/debug/app-debug.apk ../dist/ShelfAndStock-1.7.0.apk
 ls -l ../dist

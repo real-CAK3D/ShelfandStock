@@ -12,13 +12,29 @@
         android:theme="@style/AppTheme" android:allowBackup="true" android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false">
         <!-- have Play services fetch the text-recognition model when the app is installed -->
-        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr" />
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr,barcode_ui,barcode" />
         <activity android:name=".MainActivity" android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize|uiMode"
-            android:windowSoftInputMode="adjustResize" android:screenOrientation="portrait">
+            android:windowSoftInputMode="adjustResize" android:screenOrientation="portrait" android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- "Share" a receipt (a screenshot, a photo, or text) from the Walmart or Hannaford app, or anywhere -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
         <service android:name=".NoticeJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />

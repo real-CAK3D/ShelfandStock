@@ -1,7 +1,7 @@
 // Scan a receipt → check the lines → save prices for that store, put the groceries in the kitchen,
 // and take them off the shopping list. Then offer to read the real dates off the packages.
 
-import { state, update, recordReceipt, money, stockFromReceipt, sectionById, parseQty } from '../store.js';
+import { state, update, recordReceipt, money, stockFromReceipt, sectionById, parseQty, kindFrom } from '../store.js';
 import { FOOD_BY_ID, UNITS } from '../data/foods.js';
 import { readText, parseReceipt, matchName, cleanReceiptName, usingPhoneReader } from '../services/ocr.js';
 import { openSheet, esc, attr, toast, haptic, confetti, icon } from './dom.js';
@@ -9,7 +9,9 @@ import { loader } from './loader.js';
 import { currentStore } from '../services/stores.js';
 import { labelWalk } from './itemSheet.js';
 
-export function receiptFlow() {
+// prefill: { files } shared photos/screenshots, or { text } a receipt shared as text (e.g. from a store's app)
+export function receiptFlow(prefill = {}) {
+  if (prefill.text && !prefill.files?.length) { const r = parseReceipt(prefill.text); if (r.items.length) return review(r); }
   openSheet({
     title: '🧾 Scan a receipt',
     html: `<p class="muted" style="margin-top:0">Snap the whole receipt, flat and in good light. Every grocery on it goes into your kitchen (you check the list first), comes off the shopping list, and its price is saved for that store.</p>
@@ -17,8 +19,8 @@ export function receiptFlow() {
       <div class="row" style="gap:8px"><label class="btn btn-brass grow">📸 Take a picture<input type="file" accept="image/*" capture="environment" data-rc hidden></label><label class="btn btn-ghost">🖼️ Photo<input type="file" accept="image/*" multiple data-rc hidden></label></div>
       <p class="small muted" style="margin:10px 2px 0">${usingPhoneReader() ? '✨ Using your phone’s built-in text reader.' : 'Tip: the Android app reads receipts much more accurately than the browser.'}</p>
       <div data-rcout></div>`,
-    onMount: (b, close) => b.querySelectorAll('[data-rc]').forEach(inp => inp.onchange = async () => {
-      const files = [...inp.files]; inp.value = ''; if (!files.length) return;
+    onMount: (b, close) => {
+      const go = async files => {
       const out = b.querySelector('[data-rcout]');
       out.innerHTML = loader('Reading your receipt…', ['🧾', '🔍', '💵']);
       try {
@@ -29,9 +31,17 @@ export function receiptFlow() {
         if (!r.items.length) { out.innerHTML = '<div class="where-banner">🤔 <span>Couldn’t find any groceries. Try a flatter, brighter photo of the whole receipt.</span></div>'; return; }
         close(); review(r);
       } catch (e) { out.innerHTML = '<div class="where-banner">📡 <span>The text reader needs an internet connection the first time.</span></div>'; }
-    }),
+      };
+      b.querySelectorAll('[data-rc]').forEach(inp => inp.onchange = () => { const files = [...inp.files]; inp.value = ''; if (files.length) go(files); });
+      if (prefill.files?.length) go(prefill.files);
+    },
   });
 }
+
+// store brands as receipts print them, and the pack size on the line ("GV 2% MLK GAL" → Great Value, "5LB" → 5 lb)
+const STORE_BRANDS = [[/\bgv\b|great value/i, 'Great Value'], [/\bhnfd\b|hannaford/i, 'Hannaford'], [/\bks\b|kirkland/i, 'Kirkland'], [/mkt\s*pntry|market pantry/i, 'Market Pantry'], [/good\s*&\s*gather/i, 'Good & Gather'], [/\bsig\b|signature/i, 'Signature Select'], [/nature'?s promise/i, "Nature's Promise"], [/members mark|\bmm\b/i, "Member's Mark"]];
+const brandOf = raw => (STORE_BRANDS.find(([re]) => re.test(raw)) || [, ''])[1];
+const sizeOf = raw => { const m = raw.match(/\b(\d+(?:\.\d+)?)\s?(lb|lbs|oz|fl oz|gal|ct|pk|dz|qt)\b/i) || raw.match(/\b(gal|gallon|half gal|dozen)\b/i); return m ? (m[2] ? `${m[1]} ${m[2].toLowerCase().replace('lbs', 'lb')}` : m[1].toLowerCase()) : ''; };
 
 function guessStore(head) {
   const saved = state.stores || [];
@@ -101,7 +111,7 @@ function review(r) {
         let placed = [], ticked = 0;
         if (b.querySelector('[data-stock]').checked) {
           const before = state.shopping.length;
-          placed = stockFromReceipt(chosen.map(x => ({ name: x.name, foodId: x.food?.id || null, qty: x.qty, unit: x.unit, cat: x.food?.cat || 'pantry', emoji: x.food?.emoji || '🛒' })));
+          placed = stockFromReceipt(chosen.map(x => ({ name: x.name, foodId: x.food?.id || null, qty: x.qty, unit: x.unit, cat: x.food?.cat || 'pantry', emoji: x.food?.emoji || '🛒', store, price: Number(x.paid) || null, raw: x.raw, brand: brandOf(x.raw), size: sizeOf(x.raw), kind: kindFrom(cleanReceiptName(x.raw), '', x.food) })));
           ticked = before - state.shopping.length;
         } else if (b.querySelector('[data-tick]').checked) update(s => { for (const x of chosen) { const e = s.shopping.find(y => !y.done && (x.food ? y.foodId === x.food.id : y.name.toLowerCase() === x.name.toLowerCase())); if (e) { e.done = true; ticked++; } } }, 'list-check');
         close(); haptic(25); confetti(innerWidth / 2, innerHeight / 2, 26);

@@ -13,6 +13,24 @@ export const sharing = () => { try { return localStorage.getItem(SHARE) === '1';
 export const setSharing = on => { try { localStorage.setItem(SHARE, on ? '1' : '0'); } catch { } if (on) check(); else setHere(null); };
 
 const BRAND = [[/walmart|target|kmart/i, '🏬'], [/costco|bj'?s|sam'?s club/i, '📦'], [/cumberland|circle k|7-eleven|irving|mobil|shell|variety|mart\b/i, '🏪'], [/pharmacy|cvs|walgreens|rite aid/i, '💊'], [/dollar/i, '💵']];
+// The store's own product search, opened in its app or site: real aisle and today's price, the allowed way.
+const SEARCH = [
+  [/walmart/i, q => `https://www.walmart.com/search?q=${q}`],
+  [/hannaford/i, q => `https://www.hannaford.com/search/product?form_state=searchForm&keyword=${q}`],
+  [/target/i, q => `https://www.target.com/s?searchTerm=${q}`],
+  [/shaw/i, q => `https://www.shaws.com/shop/search-results.html?q=${q}`],
+  [/stop ?& ?shop/i, q => `https://stopandshop.com/search?searchTerm=${q}`],
+  [/price chopper|market 32/i, q => `https://www.pricechopper.com/search/?q=${q}`],
+  [/costco/i, q => `https://www.costco.com/CatalogSearch?keyword=${q}`],
+  [/aldi/i, q => `https://www.aldi.us/results?q=${q}`],
+];
+export function storeSearchUrl(store, { name = '', brand = '', kind = '', barcode = '' } = {}) {
+  const words = [brand, name, kind].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const hit = SEARCH.find(([re]) => re.test(store || ''));
+  if (hit) return hit[1](encodeURIComponent(/walmart/i.test(store) && barcode ? barcode : words));
+  return `https://www.google.com/search?q=${encodeURIComponent(`${store || ''} ${words}`.trim())}`;
+}
+
 export const storeEmoji = name => (BRAND.find(([re]) => re.test(name)) || [, '🛒'])[1];
 
 export function distanceM(a, b) {

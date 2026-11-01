@@ -886,3 +886,31 @@ img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: co
 .ing-row small { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
 .ing-row.missing { background: #fdf3e2; }
 .ing-row.unknown { background: none; border: 1px dashed var(--paper-3); }
+
+/* Snap: the photos of one thing (front, barcode, date label) */
+.snap-tray { display: flex; gap: 8px; margin: 10px 0 2px; flex-wrap: wrap; }
+.snap-tray:empty { display: none; }
+.snap-thumb { position: relative; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.snap-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.snap-thumb button { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; line-height: 20px; padding: 0; }
+.snap-add { width: 64px; height: 64px; border-radius: 12px; border: 2px dashed var(--paper-3); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 20px; color: var(--ink-3); cursor: pointer; text-align: center; }
+.snap-add small { font-size: 8.5px; line-height: 1.1; margin-top: 2px; }
+
+/* shopping list: store sections and what each thing is */
+.list-sec .sec-total { margin-left: auto; font: 600 12px Inter, sans-serif; color: var(--sage); }
+.l-what { display: block; color: var(--ink-2) !important; font-weight: 500; }
+.l-store { display: inline-block; margin-top: 3px; padding: 1px 8px; border-radius: 10px; background: var(--paper-2); color: var(--ink-2); font: 600 11px Inter, sans-serif; }
+.list-group { max-width: 260px; }
+
+/* Snap's live camera: what the app thinks it is, over the picture */
+.live-cam { position: relative; margin: 10px 0; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; max-height: 62vh; }
+.live-cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-cam .reticle { position: absolute; left: 12%; right: 12%; top: 36%; height: 22%; border: 2px solid rgba(255,255,255,.75); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.18); }
+.live-card { position: absolute; left: 10px; right: 10px; top: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(30,20,12,.82); color: #fff4e2; font-size: 14px; backdrop-filter: blur(6px); display: flex; flex-direction: column; gap: 4px; }
+.live-card small { color: rgba(255,244,226,.75); font-size: 12px; }
+.live-card .btn { align-self: flex-start; margin-top: 4px; }
+.live-bar { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; }
+.live-bar .btn { background: rgba(0,0,0,.45); color: #fff; border-color: transparent; width: 64px; }
+.live-shutter { width: 64px; height: 64px; border-radius: 50%; background: #fff; border: 5px solid rgba(255,255,255,.45); box-shadow: 0 0 0 2px rgba(0,0,0,.25); }
+.live-shutter:active { transform: scale(.94); }
+.aisle-pill { display: inline-block; padding: 0 6px; margin-right: 2px; border-radius: 6px; background: #2f5f7a; color: #fff; font: 700 10.5px Inter, sans-serif; line-height: 17px; }

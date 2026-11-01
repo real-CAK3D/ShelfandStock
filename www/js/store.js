@@ -8,7 +8,7 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 12;
+const VERSION = 13;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -22,7 +22,7 @@ function blank() {
   return {
     v: VERSION,
     zones: structuredClone(DEFAULT_ZONES),
-    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [],
+    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [], barcodes: [],
     settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', season: 'auto', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
   };
 }
@@ -41,6 +41,11 @@ const MIGRATIONS = {
       if (LEGACY_SECTIONS[it.sectionId]) it.sectionId = LEGACY_SECTIONS[it.sectionId];
       if (!valid.has(it.sectionId)) it.sectionId = suggestSection(FOOD_BY_ID[it.foodId], s.zones, it);
     }
+  },
+  // v12 → v13: the household's barcode memory (what anyone here named a barcode as), seeded from items already saved with one
+  13: s => {
+    s.barcodes ||= [];
+    for (const it of s.items || []) if (it.barcode && !s.barcodes.some(b => b.id === it.barcode)) s.barcodes.push({ id: it.barcode, name: it.name, brand: it.brand || '', foodId: it.foodId || null, emoji: it.emoji, image: /^https:/.test(it.image || '') ? it.image : '' });
   },
   // v11 → v12: fridge spots named like the real one (fresh box, small shelf, vegetable & produce drawers)
   12: s => {
@@ -117,6 +122,7 @@ export function sanitize(s) {
   for (const e of s.events || []) if (e.emoji != null) e.emoji = cleanEmoji(e.emoji, '🍽️');
   for (const r of s.recipes || []) { r.emoji = cleanEmoji(r.emoji, '🍲'); if (r.image) r.image = cleanImg(r.image); }
   for (const m of s.members || []) { m.emoji = cleanEmoji(m.emoji, '⭐'); m.color = cleanColor(m.color); if (m.photo) m.photo = cleanImg(m.photo); }
+  for (const b of s.barcodes || []) { b.emoji = cleanEmoji(b.emoji); if (b.image) b.image = cleanImg(b.image); }
   return s;
 }
 
@@ -242,6 +248,8 @@ export function makeItem(partial) {
     cat: food?.cat || partial.cat || 'pantry', emoji: food?.emoji || partial.emoji || '📦',
     qty: 1, unit: food?.unit || 'ea', sectionId, added: today(), expires: null,
     opened: false, openedOn: null, minQty: null, barcode: '', brand: '', image: '', off: null, tags: [], notes: '',
+    // what exactly it is, and the purchase: kind/variety ("Blue Sparkle", "2%"), package size, store, price paid, who bought it
+    kind: '', size: '', store: '', price: null, boughtBy: who() || null,
     dateType: 'Estimated', dated: false,
     ...partial,
     sectionId,
@@ -259,13 +267,25 @@ export function makeItem(partial) {
 
 export function addItem(partial) {
   const it = makeItem(partial);
-  update(s => { s.items.push(it); s.history.push({ ts: Date.now(), by: who(), type: 'added', name: it.name, foodId: it.foodId, qty: it.qty }); }, 'item-add');
+  update(s => { s.items.push(it); rememberBarcode(s, it); s.history.push({ ts: Date.now(), by: who(), type: 'added', name: it.name, foodId: it.foodId, qty: it.qty }); }, 'item-add');
   return it;
 }
 
 export function saveItem(it) {
   syncBatches(it);
-  update(s => { const i = s.items.findIndex(x => x.id === it.id); if (i >= 0) s.items[i] = it; else s.items.push(it); }, 'item-save');
+  update(s => { const i = s.items.findIndex(x => x.id === it.id); if (i >= 0) s.items[i] = it; else s.items.push(it); rememberBarcode(s, it); }, 'item-save');
+}
+
+// The household's own barcode list: once anyone names a barcode, every phone here knows it next time.
+// Same idea the big scanner apps grew from. Photos stay out (too big to sync); label links are kept.
+function rememberBarcode(s, it) {
+  const code = String(it.barcode || '').replace(/\D/g, '');
+  if (code.length < 8 || !it.name) return;
+  s.barcodes ||= [];
+  const entry = { id: code, name: it.name, brand: it.brand || '', foodId: it.foodId || null, emoji: it.emoji, image: /^https:/.test(it.image || '') ? it.image : '' };
+  const i = s.barcodes.findIndex(b => b.id.replace(/^0+/, '') === code.replace(/^0+/, ''));
+  if (i >= 0) s.barcodes[i] = { ...s.barcodes[i], ...entry }; else s.barcodes.push(entry);
+  if (s.barcodes.length > 2000) s.barcodes = s.barcodes.slice(-2000);
 }
 
 export function removeItem(id, how = 'used') {
@@ -295,14 +315,20 @@ export function syncBatches(it) {
   return it;
 }
 
-const implicitBatch = it => ({ id: uid(), qty: Number(it.qty) || 0, expires: it.expires || null, added: it.added || today(), dateType: it.dateType || 'Estimated' });
+const implicitBatch = it => ({ id: uid(), qty: Number(it.qty) || 0, expires: it.expires || null, added: it.added || today(), dateType: it.dateType || 'Estimated', store: it.store || '', price: it.price ?? null, by: it.boughtBy || null });
 
-export function restockItem(id, { qty, expires = null, dateType = 'Best by' }) {
-  const nb = { id: uid(), qty: Number(qty) || 1, expires, added: today(), dateType };
+// A new purchase of something you have: its own batch with its own date, store, price and buyer.
+export function restockItem(id, { qty, expires = null, dateType = 'Best by', store = '', price = null, size = '' }) {
+  const nb = { id: uid(), qty: Number(qty) || 1, expires, added: today(), dateType, store: store || '', price: price ?? null, by: who() || null };
   update(s => {
     const it = s.items.find(x => x.id === id);
     if (!it) return;
     const batches = it.batches?.length ? it.batches : (Number(it.qty) > 0 ? [implicitBatch(it)] : []);
+    // then the item shows its latest purchase
+    if (store) it.store = store;
+    if (price != null) it.price = price;
+    if (size) it.size = size;
+    it.boughtBy = who() || it.boughtBy || null;
     batches.push(nb);
     it.batches = batches;
     syncBatches(it);
@@ -412,6 +438,8 @@ export function addToList(entry) {
     added = true;
     s.history.push({ ts: Date.now(), by: who(), type: 'requested', name, foodId: food?.id || null, cat: food?.cat || entry.cat });
     s.shopping.push({ by: who(),
+      brand: entry.brand || '', kind: entry.kind || '', size: entry.size || '', store: entry.store || usualStore(food?.id, name) || '',
+      aisle: aisleAt(entry.store || usualStore(food?.id, name), food?.id, name),
       id: uid(), name, foodId: food?.id || null, cat: food?.cat || entry.cat || 'pantry',
       emoji: food?.emoji || entry.emoji || '🛒', qty: entry.qty || 1, unit: entry.unit || food?.unit || 'ea',
       done: false, reasons: entry.reason ? [entry.reason] : [], added: today(), note: entry.note || '',
@@ -421,20 +449,22 @@ export function addToList(entry) {
 }
 
 // Check off: move into stock (the satisfying part).
-export function checkOffToStock(id) {
+export function checkOffToStock(id, { store = '' } = {}) {
   const e = state.shopping.find(x => x.id === id);
   if (!e) return null;
-  const existing = e.foodId && state.items.find(it => it.foodId === e.foodId && it.unit === e.unit);
+  const existing = matchingItem(e.foodId, e.unit, e.brand, e.kind);
+  const where = store || myTripStore() || '';
+  const paid = where ? priceInfo(e.foodId, e.name).byStore.find(p => p.store === where)?.price ?? null : null;
   let it;
   if (existing) {
     // A new purchase is a new batch with its own (estimated until labeled) date.
     const food = FOOD_BY_ID[existing.foodId];
     const life = shelfLifeDays(food, storageKind(existing));
-    const batchId = restockItem(existing.id, { qty: e.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated' });
+    const batchId = restockItem(existing.id, { qty: e.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated', store: where, price: paid, size: e.size || '' });
     update(s => { s.shopping = s.shopping.filter(y => y.id !== id); }, 'list-stock');
     return { item: state.items.find(i => i.id === existing.id), batchId };
   } else {
-    it = makeItem({ name: e.name, foodId: e.foodId, qty: e.qty, unit: e.unit, cat: e.cat, emoji: e.emoji });
+    it = makeItem({ name: e.name, foodId: e.foodId, qty: e.qty, unit: e.unit, cat: e.cat, emoji: e.emoji, brand: e.brand || '', kind: e.kind || '', size: e.size || '', store: where, price: paid });
     update(s => {
       s.items.push(it);
       s.shopping = s.shopping.filter(y => y.id !== id);
@@ -444,6 +474,61 @@ export function checkOffToStock(id) {
   return { item: it, batchId: null };
 }
 
+// The item a new purchase belongs to: same food and unit, preferring the same brand and kind
+// (so Hood 2% doesn't land on the store-brand whole milk).
+export function matchingItem(foodId, unit, brand = '', kind = '') {
+  if (!foodId) return null;
+  const same = state.items.filter(it => it.foodId === foodId && it.unit === unit);
+  const b = (brand || '').toLowerCase(), k = (kind || '').toLowerCase();
+  return same.find(it => b && (it.brand || '').toLowerCase() === b && (!k || (it.kind || '').toLowerCase() === k))
+    || same.find(it => b && (it.brand || '').toLowerCase() === b)
+    || (b ? same.find(it => !it.brand) : null)
+    || (b ? null : same[0]) || null;
+}
+
+// Where something is usually bought: the store it was bought at most often (batches, receipts, prices).
+// "HANNAFORD", "hannaford" and "Hannaford" are one store: the saved store's spelling wins, else title case
+export function storeName(name) {
+  const n = String(name || '').trim(); if (!n) return '';
+  const saved = (state.stores || []).find(x => x.name.toLowerCase() === n.toLowerCase());
+  return saved ? saved.name : n === n.toUpperCase() || n === n.toLowerCase() ? n.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/'S\b/g, "'s") : n;
+}
+
+export function usualStore(foodId, name) {
+  const n = (name || '').toLowerCase(), count = {};
+  const add = st => { st = storeName(st); if (st) count[st] = (count[st] || 0) + 1; };
+  for (const it of state.items) if ((foodId && it.foodId === foodId) || (!foodId && it.name.toLowerCase() === n)) { add(it.store); for (const b of it.batches || []) add(b.store); }
+  for (const p of state.prices || []) if ((foodId && p.foodId === foodId) || (!foodId && p.name.toLowerCase() === n)) add(p.store);
+  return Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+}
+// Which aisle it's in at a store, from any item of that food that's been given one ("Aisle 7").
+export function aisleAt(store, foodId, name) {
+  if (!store) return '';
+  const st = storeName(store), n = (name || '').toLowerCase();
+  for (const it of state.items) if ((foodId && it.foodId === foodId) || (!foodId && it.name.toLowerCase() === n)) { const a = it.aisles?.[st]; if (a) return a; }
+  return '';
+}
+// Remember an aisle for every item of that food, and every list entry for it at that store.
+export function setAisle(store, foodId, name, aisle) {
+  const st = storeName(store), n = (name || '').toLowerCase(), a = String(aisle || '').trim();
+  update(s => {
+    for (const it of s.items) if ((foodId && it.foodId === foodId) || (!foodId && it.name.toLowerCase() === n)) { it.aisles ||= {}; if (a) it.aisles[st] = a; else delete it.aisles[st]; }
+    for (const e of s.shopping) if (storeName(e.store) === st && ((foodId && e.foodId === foodId) || (!foodId && e.name.toLowerCase() === n))) e.aisle = a;
+  }, 'aisle');
+}
+// "A12" < "Aisle 3" < "7" < "12" < no aisle: natural order for walking the store
+export const aisleOrder = a => { if (!a) return [1, 0, '']; const m = String(a).match(/\d+/); return [0, m ? Number(m[0]) : 0, String(a).toLowerCase()]; };
+
+// the store run this person is on right now, if any
+export function myTripStore() { const me = who(); return activeTrips().find(t => t.by === me)?.store || ''; }
+
+// The rest of "what kind": a product's name minus its brand, the food it is, and the size.
+// "Snuggle Liquid Fabric Softener Blue Sparkle" → "Blue Sparkle"; "Harvest Frosted Sugar Cookies" → "Harvest Frosted Sugar".
+export function kindFrom(name, brand, food) {
+  const drop = new Set([...(brand || '').toLowerCase().split(/\s+/), ...(food ? [food.name, ...food.aliases].join(' ').toLowerCase().split(/\s+/) : []), 'liquid', 'the', 'and', 'with', 'of', 'gallon', 'gal', 'pack', 'size', 'family', 'value', 'new']);
+  return String(name || '').replace(/\b\d+(\.\d+)?\s?(oz|fl oz|lb|lbs|ct|count|g|kg|ml|l|qt|gal|pk|loads?)\b/gi, ' ').split(/\s+/).filter(w => w && !drop.has(w.toLowerCase().replace(/[^a-z0-9%]/g, ''))).join(' ').replace(/[,&-]+$/, '').trim();
+}
+
 // Groceries straight off a receipt into the kitchen: each line becomes a new batch on the item you
 // already have (same food and unit) or a new item on its usual shelf, with an estimated date, and
 // anything it covers comes off the shopping list. Returns [{ item, batchId }] for dating afterwards.
@@ -451,13 +536,13 @@ export function stockFromReceipt(lines) {
   const placed = [];
   for (const l of lines) {
     const food = l.foodId ? FOOD_BY_ID[l.foodId] : null;
-    const existing = food && state.items.find(it => it.foodId === food.id && it.unit === l.unit);
+    const existing = food && matchingItem(food.id, l.unit, l.brand, l.kind);
     if (existing) {
       const life = shelfLifeDays(food, storageKind(existing));
-      const batchId = restockItem(existing.id, { qty: l.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated' });
+      const batchId = restockItem(existing.id, { qty: l.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated', store: l.store || '', price: l.price ?? null, size: l.size || '' });
       placed.push({ item: state.items.find(i => i.id === existing.id), batchId });
     } else {
-      const it = makeItem({ name: l.name, foodId: food?.id || null, qty: l.qty, unit: l.unit, cat: food?.cat || l.cat, emoji: food?.emoji || l.emoji });
+      const it = makeItem({ name: l.name, foodId: food?.id || null, qty: l.qty, unit: l.unit, cat: food?.cat || l.cat, emoji: food?.emoji || l.emoji, store: l.store || '', price: l.price ?? null, size: l.size || '', kind: l.kind || '', brand: l.brand || '', notes: l.raw ? `On the receipt as “${l.raw}”` : '' });
       update(s => { s.items.push(it); }, 'item-add');
       placed.push({ item: it, batchId: null });
     }
@@ -477,7 +562,9 @@ export function suggestions() {
   const out = [];
   const onList = new Set(state.shopping.filter(x => !x.done).map(x => x.foodId || x.name.toLowerCase()));
   const seen = new Set();
-  const push = (key, s) => { if (onList.has(key) || seen.has(key)) return; seen.add(key); out.push(s); };
+  // what the kitchen knows about it (brand, kind, size) and where it's usually bought go along to the list
+  const detail = key => { const it = state.items.find(i => (i.foodId || i.name.toLowerCase()) === key); return { brand: it?.brand || '', kind: it?.kind || '', size: it?.size || '', store: usualStore(it?.foodId || (FOOD_BY_ID[key] ? key : null), it?.name || key) }; };
+  const push = (key, s) => { if (onList.has(key) || seen.has(key)) return; seen.add(key); out.push({ ...detail(key), ...s }); };
 
   for (const it of state.items) {
     const key = it.foodId || it.name.toLowerCase();
@@ -550,6 +637,7 @@ export function recordReceipt({ store, storeId, total, items }) {
   const date = today(), by = who();
   update(s => {
     s.prices ||= [];
+    store = storeName(store);
     for (const i of items) s.prices.push({ id: uid(), foodId: i.foodId || null, name: i.name, store, storeId: storeId || null, price: Number(i.price), date, by });
     s.prices = s.prices.slice(-1500);
     s.history.push({ ts: Date.now(), by, type: 'receipt', name: store, total: total ?? items.reduce((a, i) => a + Number(i.price), 0), count: items.length });
@@ -560,7 +648,7 @@ const sameItem = (p, foodId, name) => foodId ? p.foodId === foodId : p.name.toLo
 // Latest price at each store, cheapest first.
 export function priceInfo(foodId, name) {
   const latest = new Map();
-  for (const p of (state.prices || []).filter(p => sameItem(p, foodId, name))) { const prev = latest.get(p.store); if (!prev || p.date >= prev.date) latest.set(p.store, p); }
+  for (const p0 of (state.prices || []).filter(p => sameItem(p, foodId, name))) { const p = { ...p0, store: storeName(p0.store) }, prev = latest.get(p.store); if (!prev || p.date >= prev.date) latest.set(p.store, p); }
   const byStore = [...latest.values()].sort((a, b) => a.price - b.price);
   return { byStore, cheapest: byStore[0] || null, last: (state.prices || []).filter(p => sameItem(p, foodId, name)).at(-1) || null };
 }

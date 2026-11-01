@@ -126,7 +126,7 @@ export function suggestSection(food, zones, hint) {
     food = { cat: hint.cat, id: String(hint.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'), zone: COLD_CATS.includes(hint.cat) ? 'fridge' : hint.cat === 'frozen' ? 'freezer' : 'cabinet' };
   }
   const { cat, zone, id } = food;
-  if (cat === 'pet') return /treat|bone|chew/.test(id) ? pick('cl-treats') : pick('cl-bag');
+  if (cat === 'pet') return /treat|bone|chew|ear|bully|stick/.test(id) ? pick('cl-treats') : pick('cl-bag');
   if (zone === 'holiday') {
     if (/napkin|candle|punch/.test(id)) return pick('ho-party');
     if (/cookie|cake/.test(id)) return pick('ho-xmas');

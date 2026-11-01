@@ -1,7 +1,9 @@
+// Product labels by barcode: Open Food Facts and its sister databases, UPCitemdb, and the household's own memory.
 // Open Food Facts — free, open database of real product labels (no API key).
 // https://openfoodfacts.github.io/openfoodfacts-server/api/
 
 import { matchFood } from '../data/foods.js';
+import { state } from '../store.js';
 
 const BASE = 'https://world.openfoodfacts.org';
 const FIELDS = 'code,product_name,brands,quantity,image_front_small_url,image_front_url,nutriments,nutriscore_grade,nova_group,allergens_tags,ingredients_text,serving_size,categories_tags,labels_tags';
@@ -37,14 +39,46 @@ async function getJSON(url, ms = 9000) {
   } finally { clearTimeout(t); }
 }
 
+// What a barcode is, from the free sources in order:
+//   1. this household's own memory (anything anyone here named before, shared over sync)
+//   2. Open Food Facts, then its sister databases for pet food, household products and beauty
+//   3. UPCitemdb (free, 100 lookups a day; only from the Android app, it doesn't allow browsers)
+// Same idea as the big scanner apps: open data first, then build your own list from what you scan.
+const SISTERS = ['https://world.openpetfoodfacts.org', 'https://world.openproductsfacts.org', 'https://world.openbeautyfacts.org'];
+const keyOf = code => String(code).replace(/\D/g, '').replace(/^0+/, '');
+
+export function rememberedBarcode(code) {
+  const k = keyOf(code);
+  return (state.barcodes || []).find(b => keyOf(b.id) === k) || null;
+}
+
 export async function lookupBarcode(code) {
   code = String(code).replace(/\D/g, '');
   if (!code) throw new Error('No barcode');
+  const mine = rememberedBarcode(code);
+  if (mine) return { barcode: code, name: mine.name, brand: mine.brand || '', quantity: '', image: mine.image || '', foodId: mine.foodId || null, emoji: mine.emoji, source: 'household', nutrition: {}, allergens: [], labels: [] };
   if (cache.has(code)) return cache.get(code);
-  const j = await getJSON(`${BASE}/api/v2/product/${code}.json?fields=${FIELDS}`);
-  const p = j.status === 1 || j.product ? normalize(j.product, code) : null;
-  cache.set(code, p);
+  let p = null;
+  const j = await getJSON(`${BASE}/api/v2/product/${code}.json?fields=${FIELDS}`).catch(() => null);
+  if (j && (j.status === 1 || j.product)) p = { ...normalize(j.product, code), source: 'Open Food Facts' };
+  for (const host of p ? [] : SISTERS) {
+    const r = await getJSON(`${host}/api/v2/product/${code}.json?fields=${FIELDS}`).catch(() => null);
+    if (r && (r.status === 1 || r.product) && r.product?.product_name) { p = { ...normalize(r.product, code), source: { 'https://world.openpetfoodfacts.org': 'Open Pet Food Facts', 'https://world.openproductsfacts.org': 'Open Products Facts', 'https://world.openbeautyfacts.org': 'Open Beauty Facts' }[host] }; break; }
+  }
+  if (!p && window.LarderNative?.fetch) p = await upcItemDb(code).catch(() => null);
+  if (p) cache.set(code, p);
   return p;
+}
+
+async function upcItemDb(code) {
+  const j = await getJSON(`https://api.upcitemdb.com/prod/trial/lookup?upc=${code}`, 9000);
+  const it = j?.items?.[0];
+  if (!it?.title) return null;
+  // "Snuggle Liquid Fabric Softener  Blue Sparkle  123.1 oz  181 Loads" → name without the size noise
+  const name = it.title.replace(/\s{2,}/g, ' ').replace(/\b\d+(\.\d+)?\s?(oz|fl oz|lb|lbs|ct|count|pack|pk|g|kg|ml|l|loads?)\b.*$/i, '').replace(/[-,\s]+$/, '').trim();
+  const cat = (it.category || '').split('>').pop().trim();
+  const guess = matchFood(name) || matchFood(cat) || matchFood(it.title);
+  return { barcode: code, name, brand: it.brand || '', quantity: (it.title.match(/\b\d+(\.\d+)?\s?(oz|fl oz|lb|ct|count|g|kg|ml|l)\b/i) || [''])[0], image: (it.images || []).find(u => /^https:/.test(u)) || '', foodId: guess?.id || null, source: 'UPCitemdb', nutrition: {}, allergens: [], labels: [], ingredients: '' };
 }
 
 // Full-text search: the newer search service first, the classic endpoint as a fallback.

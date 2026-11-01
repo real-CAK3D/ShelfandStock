@@ -1,7 +1,8 @@
 // Shopping list: tick things off in the store, then "put away" to move them into the kitchen
 // and read their real dates off the packages.
 
-import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money } from '../store.js';
+import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money, myTripStore, storeName, aisleAt, setAisle, aisleOrder } from '../store.js';
+import { currentStore, storeEmoji, storeSearchUrl } from '../services/stores.js';
 import { CATEGORIES, searchFoods, FOOD_BY_ID } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confetti, flyTo, openSheet, confirmBox } from '../ui/dom.js';
 import { labelWalk, dateSheet } from '../ui/itemSheet.js';
@@ -22,6 +23,22 @@ export function render(root) {
   const done = open.filter(x => x.done);
   const groups = {};
   for (const e of open) (groups[e.cat] ||= []).push(e);
+  // By store: a section per store (where each thing is usually bought), "Anywhere" for the rest, aisles in order inside.
+  // By aisle: the old way. Defaults to by store once anything on the list has a store.
+  const byStore = (state.settings.listGroup || (open.some(e => e.store) ? 'store' : 'aisle')) === 'store';
+  const aisleSort = (x, y) => (ORDER.indexOf(x.cat) + 99 * (ORDER.indexOf(x.cat) < 0)) - (ORDER.indexOf(y.cat) + 99 * (ORDER.indexOf(y.cat) < 0));
+  const sections = byStore
+    ? [...new Set(open.map(e => storeName(e.store)))].sort((x, y) => !x ? 1 : !y ? -1 : open.filter(e => e.store === y).length - open.filter(e => e.store === x).length || x.localeCompare(y))
+        .map(st => { const items = open.filter(e => storeName(e.store) === st).sort((x, y) => { const a = aisleOrder(x.aisle), b2 = aisleOrder(y.aisle); return a[0] - b2[0] || a[1] - b2[1] || a[2].localeCompare(b2[2]) || aisleSort(x, y); }); return { name: st || 'Anywhere', emoji: st ? storeEmoji(st) : '🛒', items, total: st ? Math.round(items.reduce((a, e) => a + (priceInfo(e.foodId, e.name).byStore.find(p => p.store === st)?.price || 0) * (Number(e.qty) || 1), 0) * 100) / 100 : 0 }; })
+    : ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => !ORDER.includes(c))).map(c => ({ name: catOf(c).name, emoji: catOf(c).emoji, items: groups[c], total: 0 }));
+  const what = e => [e.brand, e.kind, e.size].filter(Boolean).join(' · ');
+  const row = e => `<div class="lrow ${e.done ? 'done' : ''}" data-id="${e.id}">
+          <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
+          <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}${recalled.has(e.id) ? ' <span class="pill bad" title="Possible recall">⚠️ recall</span>' : ''}</b>${what(e) || e.aisle ? `<small class="l-what">${e.aisle ? `<span class="aisle-pill">${/^\d/.test(e.aisle) ? 'Aisle ' : ''}${esc(e.aisle)}</span> ` : ''}${esc(what(e))}</small>` : ''}${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}
+          ${byStore ? '' : `<button class="l-store" data-setstore="${e.id}">${e.store ? `${storeEmoji(e.store)} ${esc(e.store)}` : '＋ store'}</button>`}${byStore ? `<button class="l-store" data-setstore="${e.id}" aria-label="Move to another store">⇄</button>` : ''}</span>
+          <span class="lq">${fmtQty(e.qty)} ${esc(e.unit)}${(() => { const pi = priceInfo(e.foodId, e.name), here = e.store && pi.byStore.find(p => p.store === e.store), c = pi.cheapest; return here ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(here.price)}${c && c.store !== e.store && c.price < here.price ? ` · ${money(c.price)} ${esc(c.store)}` : ''}</small>` : c ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(c.price)} ${esc(c.store)}</small>` : ''; })()}</span>
+          <button class="icon-btn" style="width:32px;height:32px;color:var(--ink-3);background:none;border:0" data-del="${e.id}" aria-label="Remove">${icon('close')}</button>
+        </div>`;
   const sugg = suggestions();
 
   const mineTrip = activeTrips().find(t => t.by === me()?.id);
@@ -41,14 +58,10 @@ export function render(root) {
     ${done.length ? `<div style="margin:12px 12px 0"><button class="btn btn-sage btn-block" data-putaway>📦 Put away ${done.length} item${done.length > 1 ? 's' : ''} &amp; date them</button></div>` : ''}
     <div class="notepad-top wood-dark" style="margin-top:14px"></div>
     <div class="notepad" style="margin-top:0">
-      ${open.length ? ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => !ORDER.includes(c))).map(c => `
-        <div class="group-h" style="margin:4px 16px 2px 56px">${catOf(c).emoji} ${esc(catOf(c).name)} <span class="n">${groups[c].length}</span></div>
-        ${groups[c].map(e => `<div class="lrow ${e.done ? 'done' : ''}" data-id="${e.id}">
-          <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
-          <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}${recalled.has(e.id) ? ' <span class="pill bad" title="Possible recall">⚠️ recall</span>' : ''}</b>${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}</span>
-          <span class="lq">${fmtQty(e.qty)} ${esc(e.unit)}${(() => { const c = priceInfo(e.foodId, e.name).cheapest; return c ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(c.price)} ${esc(c.store)}</small>` : ''; })()}</span>
-          <button class="icon-btn" style="width:32px;height:32px;color:var(--ink-3);background:none;border:0" data-del="${e.id}" aria-label="Remove">${icon('close')}</button>
-        </div>`).join('')}`).join('') : `<div class="empty"><span class="big">📝</span>Your list is empty.<br><span class="small">Add things above, or grab suggestions below.</span></div>`}
+      ${open.length ? `<div class="seg seg-sm list-group" style="margin:6px 16px 6px 56px;width:auto" data-listgroup><button class="${byStore ? 'on' : ''}" data-v="store">🏪 By store</button><button class="${byStore ? '' : 'on'}" data-v="aisle">🥬 By aisle</button></div>` : ''}
+      ${open.length ? sections.map(sec => `
+        <div class="group-h list-sec" style="margin:4px 16px 2px 56px">${sec.emoji} ${esc(sec.name)} <span class="n">${sec.items.length}</span>${sec.total ? `<span class="sec-total">≈ ${money(sec.total)}</span>` : ''}</div>
+        ${sec.items.map(row).join('')}`).join('') : `<div class="empty"><span class="big">📝</span>Your list is empty.<br><span class="small">Add things above, or grab suggestions below.</span></div>`}
     </div>
     ${open.length ? `<div class="row" style="margin:0 12px;gap:8px"><button class="btn btn-ghost grow btn-sm" data-receipt>🧾 Scan receipt</button><button class="btn btn-ghost grow btn-sm" data-share>${icon('share')} Share list</button><button class="btn btn-ghost grow btn-sm" data-clear>${icon('trash')} Clear all</button></div>` : ''}
     ${perish.length ? `<div class="section-title"><h2>Pick up while you're out</h2></div><p class="small muted" style="margin:-6px 16px 8px">Going bad soon or down to the last one.</p><div class="stagger">${(morePerish ? perish : perish.slice(0, 5)).map(suggRow).join('')}</div>${perish.length > 5 ? `<button class="btn btn-ghost btn-sm btn-block" style="width:auto;margin:0 12px" data-moreperish>${morePerish ? 'Show fewer' : `Show all ${perish.length}`}</button>` : ''}` : ''}
@@ -73,9 +86,11 @@ export function render(root) {
     if (cb) {
       const id = cb.dataset.check;
       haptic(15);
-      update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.done = !x.done; }, 'list-check');
+      update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.done = !x.done; x.boughtAt = x.done ? currentStore()?.name || myTripStore() || x.store || '' : ''; } }, 'list-check');
       return;
     }
+    const lg = e.target.closest('[data-listgroup] [data-v]'); if (lg) { haptic(); return update(s => { s.settings.listGroup = lg.dataset.v; }); }
+    const ss = e.target.closest('[data-setstore]'); if (ss) return storePicker(ss.dataset.setstore);
     const del = e.target.closest('[data-del]');
     if (del) { const row = del.closest('.lrow'); row.classList.add('leaving'); setTimeout(() => update(s => { s.shopping = s.shopping.filter(x => x.id !== del.dataset.del); }, 'list-del'), 300); return; }
     if (e.target.closest('[data-putaway]')) return putAway();
@@ -111,9 +126,32 @@ export function render(root) {
   });
 }
 
+// Move a list entry to a store's section (or Anywhere); a new store name can be typed in.
+function storePicker(id) {
+  const e = state.shopping.find(x => x.id === id); if (!e) return;
+  const pi = priceInfo(e.foodId, e.name);
+  const names = [...new Set([...(state.stores || []).map(x => x.name), ...(state.prices || []).map(p => p.store), ...state.shopping.map(x => x.store)].map(storeName).filter(Boolean))];
+  openSheet({
+    title: `Where to get ${esc(e.name)}`,
+    html: `${names.map(n => { const p = pi.byStore.find(x => x.store === n); return `<button class="irow" style="width:100%;text-align:left" data-pick="${attr(n)}"><span class="em">${storeEmoji(n)}</span><span class="t"><b>${esc(n)}</b>${p ? `<small>${money(p.price)} last time${pi.cheapest?.store === n && pi.byStore.length > 1 ? ' · cheapest' : ''}</small>` : ''}</span>${e.store === n ? icon('check') : ''}</button>`; }).join('')}
+      <button class="irow" style="width:100%;text-align:left" data-pick=""><span class="em">🛒</span><span class="t"><b>Anywhere</b></span>${!e.store ? icon('check') : ''}</button>
+      <div class="row" style="gap:8px;margin-top:8px"><input class="input grow" data-newstore placeholder="Another store…"><button class="btn btn-brass" data-addstore>${icon('plus')}</button></div>
+      ${e.store ? `<div class="group-h">At ${esc(storeName(e.store))}<span class="line"></span></div>
+        <div class="row" style="gap:8px"><label class="field grow" style="margin:0"><span>Aisle</span><input class="input" data-aisle value="${attr(e.aisle || '')}" placeholder="7, A12, Dairy…"></label><button class="btn btn-ghost" data-saveaisle style="align-self:flex-end">Save</button></div>
+        <a class="btn btn-wood wood-mid btn-block" style="margin-top:10px" href="${attr(storeSearchUrl(e.store, e))}" target="_blank" rel="noopener">${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</a>
+        <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s own app or site: the real aisle and today's price. Note the aisle here and it's remembered for next time.</p>` : ''}`,
+    onMount: (b, close) => {
+      const set = n => { const st = storeName(n); update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.store = st; x.aisle = aisleAt(st, x.foodId, x.name); } }, 'list-store'); haptic(); close(); };
+      b.querySelector('[data-saveaisle]')?.addEventListener('click', () => { setAisle(e.store, e.foodId, e.name, b.querySelector('[data-aisle]').value); update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.aisle = b.querySelector('[data-aisle]').value.trim(); }, 'aisle'); toast('Aisle saved', { icon: '🧭' }); close(); });
+      b.querySelectorAll('[data-pick]').forEach(x => x.onclick = () => set(x.dataset.pick));
+      b.querySelector('[data-addstore]').onclick = () => { const n = b.querySelector('[data-newstore]').value.trim(); if (n) set(n); };
+    },
+  });
+}
+
 function putAway() {
   const done = state.shopping.filter(x => x.done);
-  const placed = done.map(e => checkOffToStock(e.id)).filter(Boolean);
+  const placed = done.map(e => checkOffToStock(e.id, { store: e.boughtAt || '' })).filter(Boolean);
   confetti(innerWidth / 2, innerHeight * .4, 40);
   flyTo($('[data-putaway]'), '.tab[data-v=kitchen]', '📦');
   const ids = placed.map(p => p.item.id);
@@ -132,7 +170,8 @@ function putAway() {
 
 async function shareList() {
   const groups = {};
-  for (const e of state.shopping.filter(x => !x.done)) (groups[catOf(e.cat).name] ||= []).push(`☐ ${e.name} — ${fmtQty(e.qty)} ${e.unit}`);
+  const byStore = state.settings.listGroup !== 'aisle';
+  for (const e of state.shopping.filter(x => !x.done)) (groups[byStore && e.store ? e.store : byStore ? 'Anywhere' : catOf(e.cat).name] ||= []).push(`☐ ${e.name}${[e.brand, e.kind, e.size].filter(Boolean).length ? ` (${[e.brand, e.kind, e.size].filter(Boolean).join(', ')})` : ''} — ${fmtQty(e.qty)} ${e.unit}`);
   const text = '🛒 Shelf & Stock shopping list\n\n' + Object.entries(groups).map(([k, v]) => `${k}\n${v.join('\n')}`).join('\n\n');
   try {
     if (window.LarderNative?.share) window.LarderNative.share(text);

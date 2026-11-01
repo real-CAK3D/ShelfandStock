@@ -43,7 +43,7 @@ function filtered() {
     if (ui.status === 'expiring' && !['expired', 'today', 'soon'].includes(st)) return false;
     if (ui.status === 'low' && !(isLow(i) || Number(i.qty) === 0)) return false;
     if (ui.status === 'undated' && (i.dated || (i.dateType && i.dateType !== 'Estimated'))) return false;
-    if (q && !(`${i.name} ${i.brand} ${(i.tags || []).join(' ')} ${crumb(i)} ${catOf(i.cat).name}`.toLowerCase().includes(q))) return false;
+    if (q && !(`${i.name} ${i.brand} ${i.kind || ''} ${i.size || ''} ${i.store || ''} ${(i.batches || []).map(b => b.store || '').join(' ')} ${i.barcode || ''} ${(i.tags || []).join(' ')} ${crumb(i)} ${catOf(i.cat).name}`.toLowerCase().includes(q))) return false;
     return true;
   });
 }

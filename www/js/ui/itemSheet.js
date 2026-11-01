@@ -1,12 +1,13 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
 import { openPrices } from '../services/openprices.js';
-import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty } from '../store.js';
+import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty, kindFrom, storeName } from '../store.js';
 import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
 import { lookupBarcode, searchProducts } from '../services/off.js';
-import { identify, photoFromFile } from '../services/vision.js';
+import { storeSearchUrl, storeEmoji } from '../services/stores.js';
+import { identify, photoFromFile, hasNativeScanner, nativeScan } from '../services/vision.js';
 import { readText, parseDates } from '../services/ocr.js';
 import { loader } from './loader.js';
 import { actions } from '../router.js';
@@ -17,6 +18,15 @@ export function locationSelect(selected, name = 'sectionId') {
   return `<select class="input" name="${name}">${state.zones.map(z => `<optgroup label="${attr(z.name)}">${z.sections.map(s => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${esc(z.name)} › ${esc(s.name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
 }
 
+// what goes onto the shopping list from an item: what it is exactly, and where it's bought
+const listInfo = it => ({ name: it.name, foodId: it.foodId, unit: it.unit, brand: it.brand || '', kind: it.kind || '', size: it.size || '', store: it.store || '' });
+const who2 = id => state.members?.find(m => m.id === id)?.name || '';
+// "Bought at Hannaford for $3.49 · Nov 1 · Andrew"
+const boughtLine = (x, dateKey = 'added') => [x.store && `at ${esc(x.store)}`, x.price != null && x.price !== '' && `for ${money(Number(x.price))}`, x[dateKey] && fmtDate(x[dateKey]), who2(x.by || x.boughtBy) && esc(who2(x.by || x.boughtBy))].filter(Boolean).join(' · ');
+
+// every store the household has saved, bought at, or seen on a receipt
+const knownStores = () => [...new Set([...(state.stores || []).map(x => x.name), ...(state.prices || []).map(p => p.store), ...state.items.map(i => i.store)].map(storeName).filter(Boolean))];
+
 // ---------- detail ----------
 export function showItem(id) {
   const it = state.items.find(x => x.id === id);
@@ -26,7 +36,7 @@ export function showItem(id) {
   const undated = gear || it.cat === 'household'; // foil, detergent… get used up but never expire
   const uses = allRecipes().filter(r => r.ingredients.some(i => (it.foodId && (i.foodId || matchFood(i.name)?.id) === it.foodId))).slice(0, 8);
   const sheet = openSheet({
-    hero: `<div class="sheet-hero wood-mid">${imgOrEmoji(it)}<h2>${esc(it.name)}</h2>${it.brand ? `<div class="crumb">${esc(it.brand)}</div>` : ''}<div class="crumb">📍 ${esc(crumb(it))}</div></div>`,
+    hero: `<div class="sheet-hero wood-mid">${imgOrEmoji(it)}<h2>${esc(it.name)}</h2>${it.brand || it.kind || it.size ? `<div class="crumb">${[it.brand, it.kind, it.size].filter(Boolean).map(esc).join(' · ')}</div>` : ''}<div class="crumb">📍 ${esc(crumb(it))}</div></div>`,
     html: `
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div class="stepper"><button data-q="-1" aria-label="Less">−</button><input value="${fmtQty(it.qty)}" readonly aria-label="Quantity"><button data-q="1" aria-label="More">+</button></div>
@@ -54,6 +64,12 @@ export function showItem(id) {
         <div><small>Restock at</small><b>${it.minQty != null && it.minQty !== '' ? `${fmtQty(it.minQty)} ${esc(it.unit)}` : 'Not set'}</b></div>
         <div><small>Category</small><b>${catOf(it.cat).emoji} ${esc(catOf(it.cat).name)}</b></div>
       </div>
+      ${(() => {
+        // where to buy it again: the stores it's been bought at or that the house saved, each opening that store's own search
+        const stores = [...new Set([it.store, ...(it.batches || []).map(b2 => b2.store), ...(state.stores || []).map(x => x.name)].map(storeName).filter(Boolean))].slice(0, 4);
+        return stores.length ? `<div class="row wrap" style="gap:6px;margin:0 0 10px">${stores.map(st => `<a class="chip" href="${attr(storeSearchUrl(st, it))}" target="_blank" rel="noopener">${storeEmoji(st)} ${esc(st)}${it.aisles?.[st] ? ` · ${/^\d/.test(it.aisles[st]) ? 'aisle ' : ''}${esc(it.aisles[st])}` : ''} ↗</a>`).join('')}</div>` : '';
+      })()}
+      ${it.store || it.price != null || it.boughtBy ? `<div class="where-banner" style="margin:-4px 0 10px">🧾 <span>Bought ${boughtLine(it)}${it.barcode ? `<br><small class="muted">Barcode ${esc(it.barcode)}</small>` : ''}</span></div>` : it.barcode ? `<p class="small muted" style="margin:-4px 2px 10px">Barcode ${esc(it.barcode)}</p>` : ''}
       ${it.tags?.length ? `<div class="row wrap" style="gap:6px;margin-bottom:8px">${it.tags.map(t => `<span class="pill">#${esc(t)}</span>`).join('')}</div>` : ''}
       ${it.notes ? `<p style="margin:6px 0 10px;color:var(--ink-2)">📝 ${esc(it.notes)}</p>` : ''}
       ${(() => { const pi = priceInfo(it.foodId, it.name); return pi.byStore.length ? `<div class="group-h">Prices<span class="line"></span></div><div class="prices">${pi.byStore.map((p, i) => `<div class="p ${i === 0 && pi.byStore.length > 1 ? 'best' : ''}"><span>${esc(p.store)}${i === 0 && pi.byStore.length > 1 ? ' · cheapest' : ''}</span><b>${money(p.price)}</b></div>`).join('')}</div>` : ''; })()}
@@ -66,19 +82,19 @@ export function showItem(id) {
       b.querySelectorAll('[data-q]').forEach(btn => btn.onclick = () => {
         haptic(); adjustQty(it.id, Number(btn.dataset.q) * stepFor(it.unit));
         const cur = state.items.find(x => x.id === it.id); b.querySelector('.stepper input').value = fmtQty(cur?.qty ?? 0);
-        if (cur && Number(cur.qty) === 0) toast(`${it.name} is out — add to your list?`, { action: 'Add', onAction: () => addToList({ name: it.name, foodId: it.foodId, unit: it.unit, reason: 'Ran out' }) });
+        if (cur && Number(cur.qty) === 0) toast(`${it.name} is out — add to your list?`, { action: 'Add', onAction: () => addToList({ ...listInfo(it), reason: 'Ran out' }) });
       });
       b.querySelectorAll('[data-r]').forEach(btn => btn.onclick = () => { close(); actions.openRecipe(btn.dataset.r); });
       if (b.querySelector('[data-a=used]')) b.querySelector('[data-a=used]').onclick = () => {
         removeItem(it.id, 'used'); close(); haptic(20);
-        toast(`Used up ${it.name}`, { icon: '✅', action: 'Add to list', onAction: () => { addToList({ name: it.name, foodId: it.foodId, unit: it.unit, reason: 'Used up' }); toast('On the list', { icon: '🛒' }); } });
+        toast(`Used up ${it.name}`, { icon: '✅', action: 'Add to list', onAction: () => { addToList({ ...listInfo(it), reason: 'Used up' }); toast('On the list', { icon: '🛒' }); } });
       };
       b.querySelector('[data-a=toss]').onclick = async () => {
         if (gear) { if (await confirmBox(`Remove ${it.name} from your kitchen?`, { ok: 'Remove', danger: true })) { removeItem(it.id, 'removed'); close(); toast(`Removed ${it.name}`, { icon: '🗑️' }); } return; }
         if (!await confirmBox(`Toss ${it.name}? It'll be logged as wasted so you can spot patterns.`, { ok: 'Toss it', danger: true })) return;
         removeItem(it.id, 'tossed'); close(); toast(`Tossed ${it.name}`, { icon: '🗑️' });
       };
-      b.querySelector('[data-a=list]').onclick = e => { const added = addToList({ name: it.name, foodId: it.foodId, unit: it.unit, reason: 'Restock' }); toast(added ? 'Added to shopping list' : 'Already on your list', { icon: '🛒' }); haptic(); };
+      b.querySelector('[data-a=list]').onclick = e => { const added = addToList({ ...listInfo(it), reason: 'Restock' }); toast(added ? 'Added to shopping list' : 'Already on your list', { icon: '🛒' }); haptic(); };
       b.querySelector('[data-a=edit]').onclick = () => { close(); editItem(structuredClone(it)); };
       b.querySelector('[data-a=move]').onclick = () => moveItem(it, close);
       b.querySelector('[data-a=where]').onclick = () => { close(); actions.revealItem(it.id); };
@@ -98,7 +114,7 @@ function batchList(it) {
   return `<div class="group-h">Batches<span class="n">${it.batches.length}</span><span class="line"></span></div>
     ${it.batches.map((bt, i) => { const st = itemStatus({ ...bt, dated: bt.dateType !== 'Estimated' }); return `<div class="irow" style="padding:8px 10px">
       <span class="em" style="width:34px;height:34px;font-size:14px;font-weight:700">#${i + 1}</span>
-      <span class="t"><b>${fmtQty(bt.qty)} ${esc(it.unit)}</b><small style="white-space:normal">${esc(bt.dateType || 'Estimated')} ${bt.expires ? fmtDate(bt.expires) : '—'} · added ${fmtDate(bt.added)}</small></span>
+      <span class="t"><b>${fmtQty(bt.qty)} ${esc(it.unit)}</b><small style="white-space:normal">${esc(bt.dateType || 'Estimated')} ${bt.expires ? fmtDate(bt.expires) : '—'} · bought ${boughtLine(bt) || fmtDate(bt.added)}</small></span>
       ${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}
       <button class="icon-btn" style="width:34px;height:34px;color:var(--ink-2);background:var(--paper-2)" data-bdate="${bt.id}" aria-label="Set date">📅</button>
       <button class="icon-btn" style="width:34px;height:34px;color:var(--tomato);background:var(--tomato-2)" data-bdel="${bt.id}" aria-label="Remove batch">${icon('minus')}</button>
@@ -277,6 +293,8 @@ export function editItem(it, { isNew = false } = {}) {
           <label class="field"><span>Quantity</span><div class="stepper"><button type="button" data-d="-1">−</button><input name="qty" inputmode="decimal" value="${attr(it.qty)}"><button type="button" data-d="1">+</button></div></label>
           <label class="field grow"><span>Unit</span><select class="input" name="unit">${[...new Set([it.unit, ...UNITS])].map(u => `<option ${u === it.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></label>
         </div>
+        <div class="row" style="gap:10px"><label class="field grow"><span>Brand</span><input class="input" name="brand" value="${attr(it.brand || '')}" placeholder="Snuggle"></label><label class="field grow"><span>Kind</span><input class="input" name="kind" value="${attr(it.kind || '')}" placeholder="Blue Sparkle, 2%, low sodium…"></label></div>
+        <div class="row" style="gap:10px"><label class="field" style="width:34%"><span>Size</span><input class="input" name="size" value="${attr(it.size || '')}" placeholder="123 fl oz"></label><label class="field grow"><span>Bought at</span><input class="input" name="store" list="ed-stores" value="${attr(it.store || '')}" placeholder="Hannaford"><datalist id="ed-stores">${knownStores().map(n => `<option value="${attr(n)}">`).join('')}</datalist></label><label class="field" style="width:24%"><span>Paid</span><input class="input" name="price" inputmode="decimal" value="${it.price != null ? attr(Number(it.price).toFixed(2)) : ''}" placeholder="$"></label></div>
         <label class="field"><span>Where it lives</span>${locationSelect(it.sectionId)}</label>
         <div class="row" style="gap:10px;${['kitchenware', 'household'].includes(it.cat) ? 'display:none' : ''}" data-dates>
           <label class="field" style="width:42%"><span>Date type</span><select class="input" name="dateType">${DATE_TYPES.map(t => `<option ${t === (it.dateType || 'Estimated') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
@@ -328,6 +346,8 @@ export function editItem(it, { isNew = false } = {}) {
           qty: isFinite(parseQty(data.qty)) ? parseQty(data.qty) : Number(it.qty) || 0, minQty: data.minQty === '' || !isFinite(parseQty(data.minQty)) ? null : parseQty(data.minQty),
           expires: data.expires || null, tags: data.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
           openedOn: data.openedOn || null, opened: !!data.openedOn, image: photo,
+          brand: (data.brand || '').trim(), kind: (data.kind || '').trim(), size: (data.size || '').trim(), store: (data.store || '').trim(),
+          price: data.price === '' || data.price == null || !isFinite(Number(String(data.price).replace('$', ''))) ? null : Math.round(Number(String(data.price).replace('$', '')) * 100) / 100,
         };
         if (data.expires !== (it.expires || '') || data.dateType !== (it.dateType || 'Estimated')) next.dated = data.dateType !== 'Estimated';
         if (it.batches?.length) {
@@ -386,8 +406,10 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
         </div>
       </div>
       <div data-pane="snap" class="hidden">
-        <p class="small muted" style="margin-top:0">Take a picture of the item. If there's a barcode we read the real label; otherwise a free on-phone AI figures out what it is. Then pick your photo or ours.</p>
-        <div class="row" style="gap:8px"><label class="btn btn-brass grow">📸 Take a picture<input type="file" accept="image/*" capture="environment" data-snap hidden></label><label class="btn btn-ghost">🖼️ Photo<input type="file" accept="image/*" data-snap hidden></label></div>
+        <p class="small muted" style="margin-top:0">Snap the front, then the barcode or date label if you like. One thing, up to three photos. It reads the barcode, looks it up, reads the best-by date, and reads the name off the package when no database knows it.</p>
+        <div class="row" style="gap:8px"><button type="button" class="btn btn-brass grow" data-golive>🎥 Live camera</button><label class="btn btn-wood wood-mid">📸<input type="file" accept="image/*" capture="environment" data-snap hidden></label><label class="btn btn-ghost" title="Pick up to 3 photos">🖼️<input type="file" accept="image/*" multiple data-snap hidden></label></div>
+        <div data-live></div>
+        <div class="snap-tray" data-snaptray></div>
         <div data-snapres></div>
       </div>
       <div data-pane="scan" class="hidden">
@@ -407,9 +429,10 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
       segmented($('.seg', b), v => {
         panes.forEach(p => p.classList.toggle('hidden', p.dataset.pane !== v));
         if (v === 'scan') startScan(b, close); else stopScan();
+        if (v !== 'snap') stopLive();
         if (v === 'label') setTimeout(() => $('[data-lq]', b).focus(), 50);
       });
-      const pick = (food, extra = {}) => { stopScan(); close(); editItem(makeItem({ foodId: food?.id, name: food?.name, ...(sectionId ? { sectionId } : {}), ...extra }), { isNew: true }); };
+      const pick = (food, extra = {}) => { stopScan(); stopLive(); close(); editItem(makeItem({ foodId: food?.id, name: food?.name, ...(sectionId ? { sectionId } : {}), ...extra }), { isNew: true }); };
       const q = $('[data-q]', b), res = $('[data-results]', b), pop = $('[data-popular]', b);
       const run = () => {
         const v = q.value.trim();
@@ -447,52 +470,130 @@ export function addFlow({ sectionId = null, query = '' } = {}) {
       $('[data-lq]', b).onkeydown = e => { if (e.key === 'Enter') labelSearch(b, pick); };
       $('[data-lookup]', b).onclick = () => barcodeLookup($('[data-code]', b).value, b, pick);
       b._pick = pick;
-      b.querySelectorAll('[data-snap]').forEach(inp => inp.onchange = () => { if (inp.files[0]) snapFlow(inp.files[0], b, pick); inp.value = ''; });
+      // photos of the same thing pile up in a tray; each new one re-reads them all together
+      let snaps = [];
+      const tray = $('[data-snaptray]', b);
+      const drawTray = () => {
+        tray.innerHTML = snaps.length ? snaps.map((f, i) => `<span class="snap-thumb"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" data-unsnap="${i}" aria-label="Remove photo">×</button></span>`).join('') + (snaps.length < 3 ? `<label class="snap-add">＋<small>barcode or date</small><input type="file" accept="image/*" capture="environment" data-snapmore hidden></label>` : '') : '';
+        tray.querySelector('[data-snapmore]')?.addEventListener('change', e => { if (e.target.files[0]) { snaps.push(e.target.files[0]); drawTray(); snapFlow(snaps, b, pick); } });
+        tray.querySelectorAll('[data-unsnap]').forEach(x => x.onclick = () => { snaps.splice(Number(x.dataset.unsnap), 1); drawTray(); if (snaps.length) snapFlow(snaps, b, pick); else $('[data-snapres]', b).innerHTML = ''; });
+      };
+      b.querySelectorAll('[data-snap]').forEach(inp => inp.onchange = () => { if (inp.files.length) { snaps = [...snaps, ...inp.files].slice(-3); drawTray(); snapFlow(snaps, b, pick); } inp.value = ''; });
+      $('[data-golive]', b).onclick = () => liveSnap(b, pick, file => { snaps = [...snaps, file].slice(-3); drawTray(); snapFlow(snaps, b, pick); });
     },
-    onClose: stopScan,
+    onClose: () => { stopScan(); stopLive(); },
   });
 }
 
 // Snap: photo → barcode label or AI guess → choose which picture to keep
-async function snapFlow(file, b, pick) {
+// ---------- live camera: see what the app thinks it is before taking the picture ----------
+// Keeps reading the barcode in the camera view (the phone's own detector if it has one, else ZXing on a
+// snapshot a few times a second), looks it up as soon as one reads, and shows the answer over the picture.
+let liveStop = null;
+function stopLive() { liveStop?.(); liveStop = null; }
+async function liveSnap(b, pick, addPhoto) {
+  stopLive();
+  const box = $('[data-live]', b);
+  box.innerHTML = `<div class="live-cam"><video playsinline muted></video><div class="reticle"></div>
+      <div class="live-card" data-livecard>Point at the barcode…</div>
+      <div class="live-bar"><button type="button" class="btn btn-ghost btn-sm" data-liveclose>Close</button><button type="button" class="live-shutter" data-shutter aria-label="Take the picture"></button><span style="width:64px"></span></div></div>`;
+  const video = $('video', box), card = $('[data-livecard]', box);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+  catch { box.innerHTML = '<div class="where-banner">📷 <span>The camera isn’t available here. Use Take a picture instead.</span></div>'; return; }
+  video.srcObject = stream; await video.play().catch(() => { });
+  let alive = true, last = '', busy = false, found = null;
+  const det = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] }) : null;
+  if (!det) await loadZXing();
+  const Z = window.ZXing, hints = new Map();
+  if (Z) { hints.set(Z.DecodeHintType.TRY_HARDER, true); hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_E]); }
+  const reader = Z ? new Z.MultiFormatReader() : null; reader?.setHints(hints);
+  const frame = document.createElement('canvas');
+  const read = async () => {
+    if (det) { const r = await det.detect(video).catch(() => []); return r[0]?.rawValue || null; }
+    const s = Math.min(1, 1100 / (video.videoWidth || 1100)); frame.width = Math.round((video.videoWidth || 640) * s); frame.height = Math.round((video.videoHeight || 480) * s);
+    const g = frame.getContext('2d', { willReadFrequently: true }); g.filter = 'grayscale(1) contrast(1.4)'; g.drawImage(video, 0, 0, frame.width, frame.height);
+    try { return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(frame))), hints).getText(); } catch { return null; }
+  };
+  const tick = async () => {
+    if (!alive) return;
+    if (!busy && video.readyState >= 2) {
+      busy = true;
+      const code = await read();
+      if (code && code !== last) {
+        last = code; haptic(20);
+        card.innerHTML = `🏷️ ${esc(code)}<br><small>Looking it up…</small>`;
+        const p = await lookupBarcode(code).catch(() => null);
+        if (!alive) return;
+        const food = p?.foodId ? FOOD_BY_ID[p.foodId] : null;
+        found = { code, p, food };
+        card.innerHTML = p
+          ? `<b>${esc(p.emoji || food?.emoji || '🏷️')} ${esc(p.name)}</b><small>${[p.brand, food?.name, p.source === 'household' ? 'named before here' : p.source].filter(Boolean).map(esc).join(' · ')}</small><button type="button" class="btn btn-brass btn-sm" data-liveuse>Use this</button>`
+          : `<b>🏷️ ${esc(code)}</b><small>No database knows it yet. Take the picture and it'll read the name off the package.</small>`;
+        card.querySelector('[data-liveuse]')?.addEventListener('click', () => { stopLive(); box.innerHTML = ''; pick(food, { name: p.name || food?.name, brand: p.brand, kind: kindFrom(p.name, p.brand, food), size: p.quantity || '', barcode: code, emoji: p.emoji || food?.emoji || '🛒', foodId: food?.id || null, image: p.image || '', off: p.source === 'household' || p.source === 'UPCitemdb' ? null : p }); });
+      }
+      busy = false;
+    }
+    setTimeout(tick, 250);
+  };
+  tick();
+  $('[data-shutter]', box).onclick = () => {
+    const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+    c.getContext('2d').drawImage(video, 0, 0);
+    c.toBlob(blob => { if (!blob) return; haptic(25); addPhoto(new File([blob], `live-${Date.now()}.jpg`, { type: 'image/jpeg' }), found?.code); }, 'image/jpeg', 0.92);
+  };
+  $('[data-liveclose]', box).onclick = () => { stopLive(); box.innerHTML = ''; };
+  liveStop = () => { alive = false; stream.getTracks().forEach(t => t.stop()); };
+}
+
+async function snapFlow(files, b, pick) {
   const out = $('[data-snapres]', b);
-  out.innerHTML = loader('Looking at your photo…', ['📸', '🔍', '🥕']);
+  const run = (b._snapRun = (b._snapRun || 0) + 1); // a newer photo replaces an older answer
+  out.innerHTML = loader('Looking at your photo' + (files.length > 1 ? 's' : '') + '…', ['📸', '🔍', '🥕']);
   const status = t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; };
   let r;
-  try { r = await identify(file, status); } catch (e) { out.innerHTML = '<div class="empty"><span class="big">🤔</span>Couldn’t read that photo.</div>'; return; }
+  try { r = await identify(files, status); } catch (e) { out.innerHTML = '<div class="empty"><span class="big">🤔</span>Couldn’t read that photo.</div>'; return; }
+  if (run !== b._snapRun) return;
+  // a best-by date printed on the package goes straight onto the item
+  const dated = r.date ? { expires: r.date.date, dateType: r.date.type || 'Best by', dated: true } : {};
+  const dateLine = r.date ? `<div class="where-banner" style="margin-top:8px">📅 <span>${esc(r.date.type || 'Best by')} <b>${fmtDate(r.date.date)}</b>, read off the label</span></div>` : '';
   const choosePic = (other, otherLabel) => `<div class="pic-choice"><label><input type="radio" name="pic" value="mine" checked><img src="${r.photo}" alt=""><span>My photo</span></label><label><input type="radio" name="pic" value="theirs">${other}<span>${otherLabel}</span></label></div>`;
   const usePic = () => out.querySelector('input[name=pic]:checked')?.value === 'mine';
+  const more = files.length < 3 ? '<p class="small muted" style="text-align:center;margin:6px 0 0">Not right? Add a photo of the barcode or the name with ＋ above.</p>' : '';
   if (r.product) {
     const p = r.product, food = p.foodId ? FOOD_BY_ID[p.foodId] : null;
-    out.innerHTML = `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">🏷️ <span>Barcode found: <b>${esc(p.brand || '')} ${esc(p.name)}</b></span></div>
-      ${choosePic(p.image ? `<img src="${attr(p.image)}" alt="">` : `<span class="pic-emoji">${food?.emoji || '🛒'}</span>`, 'Label photo')}
+    const from = p.source === 'household' ? 'named before in your household' : p.source ? `from ${esc(p.source)}` : '';
+    out.innerHTML = `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">🏷️ <span>Barcode ${esc(r.code)}: <b>${p.brand && !p.name.toLowerCase().includes(p.brand.toLowerCase()) ? esc(p.brand) + ' ' : ''}${esc(p.name)}</b>${from ? `<br><small>${from}</small>` : ''}</span></div>${dateLine}
+      ${choosePic(p.image ? `<img src="${attr(p.image)}" alt="">` : `<span class="pic-emoji">${p.emoji || food?.emoji || '🛒'}</span>`, 'Label photo')}
       <button class="btn btn-brass btn-block" data-go>${icon('check')} Use this</button>`;
-    out.querySelector('[data-go]').onclick = () => pick(food, { name: p.name || food?.name, brand: p.brand, barcode: p.barcode, off: p, emoji: food?.emoji || '🛒', foodId: food?.id || null, image: usePic() ? r.photo : (p.image || '') });
+    out.querySelector('[data-go]').onclick = () => pick(food, { name: p.name || food?.name, brand: p.brand, kind: kindFrom(p.name, p.brand, food), size: p.quantity || '', barcode: p.barcode, off: p.source === 'household' || p.source === 'UPCitemdb' ? null : p, emoji: p.emoji || food?.emoji || '🛒', foodId: food?.id || null, image: usePic() ? r.photo : (p.image || ''), ...dated });
     return;
   }
+  const codeNote = r.code ? `<div class="where-banner" style="margin-bottom:8px">🏷️ <span>Read barcode <b>${esc(r.code)}</b>, but no database knows it yet. Pick or name it once and every phone here will know it next time.</span></div>` : '';
   if (!r.candidates.length) {
-    out.innerHTML = `<div class="where-banner">🤔 <span>${r.offline ? 'The food spotter needs an internet connection the first time.' : `Not sure what that is${r.labels[0] ? ` (looks like “${esc(r.labels[0].label)}”)` : ''}.`} You can still save it with your photo.</span></div>
+    out.innerHTML = `${codeNote}<div class="where-banner">🤔 <span>${r.offline ? 'The food spotter needs an internet connection the first time.' : `Not sure what that is${r.labels[0] ? ` (looks like “${esc(r.labels[0].label)}”)` : ''}.`}</span></div>${dateLine}
       <img src="${r.photo}" alt="" style="width:120px;border-radius:14px;display:block;margin:8px auto">
-      <button class="btn btn-brass btn-block" data-custom-photo>${icon('edit')} Name it myself</button>`;
-    out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: '', emoji: '📦', image: r.photo });
+      <button class="btn btn-brass btn-block" data-custom-photo>${icon('edit')} Name it myself</button>${more}`;
+    out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: '', emoji: '📦', image: r.photo, barcode: r.code || '', ...dated });
     return;
   }
-  out.innerHTML = `<p style="margin:6px 0 8px;font-weight:600">Is it one of these?</p>
-    ${r.candidates.map((c, i) => `<button class="irow" style="width:100%;text-align:left;--tint:${catOf(c.food.cat).color}" data-cand="${i}"><span class="em">${c.food.emoji}</span><span class="t"><b>${esc(c.food.name)}</b><small>${Math.round(c.prob * 100)}% sure · saw “${esc(c.label)}”</small></span>${icon('next')}</button>`).join('')}
+  out.innerHTML = `${codeNote}<p style="margin:6px 0 8px;font-weight:600">${r.candidates[0].fromText ? 'From the words on the package, is it…' : 'Is it one of these?'}</p>
+    ${r.candidates.map((c, i) => `<button class="irow" style="width:100%;text-align:left;--tint:${catOf(c.food.cat).color}" data-cand="${i}"><span class="em">${c.food.emoji}</span><span class="t"><b>${esc(c.food.name)}</b><small>${c.fromText ? `reads “${esc(c.label)}”` : `${Math.round(c.prob * 100)}% sure · looks like ${esc(c.label)}`}</small></span>${icon('next')}</button>`).join('')}
+    ${dateLine}
     ${choosePic(`<span class="pic-emoji" data-their>${r.candidates[0].food.emoji}</span>`, 'App picture')}
-    <button class="btn btn-ghost btn-block btn-sm" data-custom-photo>None of these — name it myself</button>`;
+    <button class="btn btn-ghost btn-block btn-sm" data-custom-photo>None of these — name it myself</button>${more}`;
   out.querySelectorAll('[data-cand]').forEach(btn => {
     btn.onmouseenter = () => { out.querySelector('[data-their]').textContent = r.candidates[Number(btn.dataset.cand)].food.emoji; };
-    btn.onclick = () => { const c = r.candidates[Number(btn.dataset.cand)]; pick(c.food, usePic() ? { image: r.photo } : {}); };
+    btn.onclick = () => { const c = r.candidates[Number(btn.dataset.cand)]; pick(c.food, { ...(usePic() ? { image: r.photo } : {}), barcode: r.code || '', ...dated }); };
   });
-  out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: r.labels[0]?.label || '', emoji: '📦', image: r.photo });
+  out.querySelector('[data-custom-photo]').onclick = () => pick(null, { name: r.labels[0]?.label || '', emoji: '📦', image: r.photo, barcode: r.code || '', ...dated });
 }
 
 const bestLife = f => { const d = Math.max(f.life.pantry, f.life.fridge); const z = f.life.freezer; const s = x => span(x); return [d && s(d), z && s(z) + ' frozen'].filter(Boolean).join(' / '); };
 
 function pickProduct(p, pick) {
   const food = p.foodId ? FOOD_BY_ID[p.foodId] : null;
-  pick(food, { name: p.name || food?.name, brand: p.brand, barcode: p.barcode, image: p.image, off: p, emoji: food?.emoji || '🛒', foodId: food?.id || null });
+  pick(food, { name: p.name || food?.name, brand: p.brand, kind: kindFrom(p.name, p.brand, food), size: p.quantity || '', barcode: p.barcode, image: p.image, off: p, emoji: food?.emoji || '🛒', foodId: food?.id || null });
 }
 
 async function labelSearch(b, pick) {
@@ -516,16 +617,25 @@ async function barcodeLookup(code, b, pick) {
   msg.textContent = `Looking up ${code}…`;
   try {
     const p = await lookupBarcode(code);
-    if (!p) { msg.textContent = `No label found for ${code}. You can still add it as a custom item.`; toast('Not in the label database yet'); stopScan(); pick(null, { name: '', barcode: code, emoji: '📦' }); return; }
+    if (!p) { msg.textContent = `No database knows ${code} yet.`; toast('Name it once and every phone here will know it next time', { icon: '🏷️' }); stopScan(); pick(null, { name: '', barcode: code, emoji: '📦' }); return; }
     haptic(30); stopScan(); pickProduct(p, pick);
   } catch {
-    msg.textContent = 'Offline? Couldn\'t reach Open Food Facts.';
+    msg.textContent = 'Offline? Couldn\'t reach the product databases.';
   }
 }
 
 async function startScan(b, close) {
   stopScan();
   const video = $('video', b), msg = $('[data-scanmsg]', b);
+  if (hasNativeScanner()) {
+    // the Android app: Google's own scanner screen (any angle, glare, curved bags), the one most scanner apps use
+    $('.scanner', b)?.classList.add('hidden');
+    msg.innerHTML = `<button class="btn btn-brass btn-block" data-native-scan>📷 Scan a barcode</button>`;
+    const go = async () => { const code = await nativeScan(); if (code) { $('[data-code]', b).value = code; barcodeLookup(code, b, b._pick); } else msg.innerHTML = `<button class="btn btn-brass btn-block" data-native-scan>📷 Scan a barcode</button>`; msg.querySelector('[data-native-scan]')?.addEventListener('click', go); };
+    msg.querySelector('[data-native-scan]').onclick = go;
+    go();
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) { msg.textContent = 'Camera not available here — type the barcode instead.'; return; }
   let stream;
   try {

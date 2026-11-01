@@ -40,6 +40,13 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
+import com.google.mlkit.vision.barcode.BarcodeScanner;
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
+import com.google.mlkit.vision.barcode.BarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
@@ -156,8 +163,54 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
         }
+        readShare(getIntent());
         if (state != null) web.restoreState(state);
         else web.loadUrl(ORIGIN + "/index.html");
+    }
+
+    // ---- things shared into the app (receipts from the store apps, screenshots, text) ----
+    // Held here until the page asks for them, so it works whether the app was open or not.
+    private String sharedJson = null;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (readShare(intent) && web != null) web.evaluateJavascript("window.larderShared && window.larderShared()", null);
+    }
+
+    private boolean readShare(Intent in) {
+        if (in == null) return false;
+        String a = in.getAction();
+        if (!Intent.ACTION_SEND.equals(a) && !Intent.ACTION_SEND_MULTIPLE.equals(a)) return false;
+        try {
+            JSONObject o = new JSONObject();
+            JSONArray imgs = new JSONArray();
+            CharSequence text = in.getCharSequenceExtra(Intent.EXTRA_TEXT);
+            if (text != null) o.put("text", text.toString());
+            String subject = in.getStringExtra(Intent.EXTRA_SUBJECT);
+            if (subject != null) o.put("subject", subject);
+            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+            if (Intent.ACTION_SEND.equals(a)) { Uri u = in.getParcelableExtra(Intent.EXTRA_STREAM); if (u != null) uris.add(u); }
+            else { java.util.ArrayList<Uri> l = in.getParcelableArrayListExtra(Intent.EXTRA_STREAM); if (l != null) uris.addAll(l); }
+            for (Uri u : uris) {
+                if (imgs.length() >= 4) break;
+                try (InputStream is = getContentResolver().openInputStream(u)) {
+                    Bitmap bmp = BitmapFactory.decodeStream(is);
+                    if (bmp == null) continue;
+                    // keep it readable but not huge: long side at most 2400 px
+                    float k = Math.min(1f, 2400f / Math.max(bmp.getWidth(), bmp.getHeight()));
+                    if (k < 1f) bmp = Bitmap.createScaledBitmap(bmp, Math.round(bmp.getWidth() * k), Math.round(bmp.getHeight() * k), true);
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 90, bo);
+                    imgs.put(Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP));
+                } catch (Exception ignored) { }
+            }
+            o.put("images", imgs);
+            if (imgs.length() == 0 && text == null) return false;
+            sharedJson = o.toString();
+            return true;
+        } catch (Exception e) { return false; }
     }
 
     private static String mime(String path) {
@@ -178,8 +231,53 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> web.evaluateJavascript("window.__nativeOcrDone && window.__nativeOcrDone(" + id + "," + ok + ",'" + b64 + "')", null));
     }
 
+    private BarcodeScanner barcodeReader;
+
+    private void codeDone(int id, boolean ok, String value) {
+        final String b64 = Base64.encodeToString((value == null ? "" : value).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        runOnUiThread(() -> web.evaluateJavascript("window.__nativeCodeDone && window.__nativeCodeDone(" + id + "," + ok + ",'" + b64 + "')", null));
+    }
+
     // Native helpers the web app uses when present (window.LarderNative).
     private class Bridge {
+        // Whatever was shared into the app since the page last asked (JSON: images as base64 JPEG, text), once.
+        @JavascriptInterface
+        public String takeShared() { String s = sharedJson; sharedJson = null; return s == null ? "" : s; }
+
+        // Google's own barcode scanner screen: point at any barcode, any angle. No camera permission needed.
+        @JavascriptInterface
+        public void scanCode(final int id) {
+            runOnUiThread(() -> {
+                try {
+                    GmsBarcodeScannerOptions opts = new GmsBarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E, Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_CODE_128, Barcode.FORMAT_QR_CODE)
+                        .enableAutoZoom().build();
+                    GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(MainActivity.this, opts);
+                    scanner.startScan()
+                        .addOnSuccessListener(b -> codeDone(id, true, b.getRawValue()))
+                        .addOnCanceledListener(() -> codeDone(id, false, "cancelled"))
+                        .addOnFailureListener(e -> codeDone(id, false, "failed"));
+                } catch (Throwable t) { codeDone(id, false, "failed"); }
+            });
+        }
+
+        // Barcodes in a photo (ML Kit): returns the first product barcode it finds.
+        @JavascriptInterface
+        public void readBarcode(final int id, final String jpegB64) {
+            new Thread(() -> {
+                try {
+                    byte[] bytes = Base64.decode(jpegB64, Base64.DEFAULT);
+                    Bitmap bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    if (bmp == null) { codeDone(id, false, ""); return; }
+                    if (barcodeReader == null) barcodeReader = BarcodeScanning.getClient(new BarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E, Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8).build());
+                    barcodeReader.process(InputImage.fromBitmap(bmp, 0))
+                        .addOnSuccessListener(list -> codeDone(id, !list.isEmpty(), list.isEmpty() ? "" : list.get(0).getRawValue()))
+                        .addOnFailureListener(e -> codeDone(id, false, ""));
+                } catch (Throwable t) { codeDone(id, false, ""); }
+            }).start();
+        }
+
         // Read text in a photo with Google ML Kit (on the phone, offline). Returns every line with its
         // corner points so the page can rebuild receipt rows (item on the left, price on the right).
         @JavascriptInterface

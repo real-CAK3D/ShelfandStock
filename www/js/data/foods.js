@@ -205,7 +205,7 @@ const ROWS = [
   ['Popcorn', '🍿', 'snacks', C, 0, 0, 240, 'box', 'microwave popcorn'],
   ['Fruit Snacks', '🍓', 'snacks', C, 0, 0, 270, 'box', 'gummies,fruit gummies,ultimate fruit snacks'],
   ['Granola Bars', '🍫', 'snacks', C, 0, 0, 180, 'box', ''],
-  ['Cookies', '🍪', 'snacks', C, 0, 240, 60, 'pack', 'oreos'],
+  ['Cookies', '🍪', 'snacks', C, 0, 240, 60, 'pack', 'oreos,lofthouse,sugar cookies,frosted sugar cookies,chips ahoy,cookie'],
   ['Almonds', '🌰', 'snacks', C, 365, 730, 180, 'bag', 'mixed nuts,cashews,peanuts'],
   // Beverages
   ['Orange Juice', '🧃', 'beverages', F, 10, 90, 0, 'carton', 'oj,juice'],
@@ -297,8 +297,11 @@ const ROWS = [
   // Pet (Clyde)
   ['Dog Food', '🐕', 'pet', 'pet', 0, 0, 180, 'bag', 'kibble,dry dog food,dog chow'],
   ['Wet Dog Food', '🥫', 'pet', 'pet', 3, 0, 730, 'can', 'canned dog food'],
-  ['Dog Treats', '🦴', 'pet', 'pet', 0, 0, 365, 'bag', 'milk-bone,dog biscuits,treats'],
+  ['Dog Treats', '🦴', 'pet', 'pet', 0, 0, 365, 'bag', 'milk-bone,dog biscuits,treats,dog treats,health bars,greenies,beggin strips'],
   ['Dog Bones', '🦴', 'pet', 'pet', 0, 0, 365, 'pack', 'chew,rawhide,dental chews,bully stick'],
+  ['Pig Ears', '🐷', 'pet', 'pet', 0, 0, 540, 'bag', 'pig ear,pig ears dog chew,natural pig ears,pork ears'],
+  ['Bully Sticks', '🦴', 'pet', 'pet', 0, 0, 730, 'bag', 'bully stick,pizzle sticks'],
+  ['Dog Chews', '🦴', 'pet', 'pet', 0, 0, 540, 'bag', 'dog chew,natural dog chew,all american dog chews,dental chew,yak chew,antler chew'],
   // Household
   ['Aluminum Foil', '🧻', 'household', C, 0, 0, 0, 'roll', 'foil,tin foil'],
   ['Plastic Wrap', '🧻', 'household', C, 0, 0, 0, 'roll', 'cling wrap,saran wrap'],
@@ -307,7 +310,7 @@ const ROWS = [
   ['Paper Towels', '🧻', 'household', C, 0, 0, 0, 'pack', ''],
   ['Dish Soap', '🧼', 'household', C, 0, 0, 0, 'bottle', 'dawn'],
   ['Trash Bags', '🗑️', 'household', C, 0, 0, 0, 'box', 'garbage bags'],
-  ['Laundry Detergent', '🧴', 'household', C, 0, 0, 0, 'jug', 'detergent,gain,tide,all,persil,laundry soap'],
+  ['Laundry Detergent', '🧴', 'household', C, 0, 0, 0, 'jug', 'detergent,gain,tide,all free clear,persil,laundry soap,arm and hammer detergent'],
   ['Fabric Softener', '🧴', 'household', C, 0, 0, 0, 'bottle', 'snuggle,downy,softener'],
   ['Bleach', '🧴', 'household', C, 0, 0, 0, 'jug', 'clorox,color safe bleach'],
   ['Dryer Sheets', '🧺', 'household', C, 0, 0, 0, 'box', 'bounce,dryer sheet'],

@@ -136,6 +136,8 @@ export function parseDates(text) {
   for (const m of t.matchAll(/\b(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})\b/g)) add(yr(m[3]), +m[1], +m[2], m.index, 'mdy');
   for (const m of t.matchAll(/\b([A-Za-z]{3,4})\.?\s*(\d{1,2})[,\s]+(\d{2,4})\b/g)) { const mo = MONTHS[m[1].toLowerCase()]; if (mo) add(yr(m[3]), mo, +m[2], m.index, 'mon-d-y'); }
   for (const m of t.matchAll(/\b(\d{1,2})\s*([A-Za-z]{3,4})\.?\s*(\d{2,4})\b/g)) { const mo = MONTHS[m[2].toLowerCase()]; if (mo) add(yr(m[3]), mo, +m[1], m.index, 'd-mon-y'); }
+  // "2027 Sep 03", "2027.SEP.03" (year first, as many pet-food and bakery bags print it)
+  for (const m of t.matchAll(/\b(20\d\d)[.\s/-]*([A-Za-z]{3,4})[.\s/-]*(\d{1,2})\b/g)) { const mo = MONTHS[m[2].toLowerCase()]; if (mo) add(+m[1], mo, +m[3], m.index, 'y-mon-d'); }
   for (const m of t.matchAll(/\b([A-Za-z]{3,4})\.?\s*(20\d\d)\b/g)) { const mo = MONTHS[m[1].toLowerCase()]; if (mo) add(+m[2], mo, endOfMonth(+m[2], mo), m.index, 'mon-y'); }
   for (const m of t.matchAll(/\b(\d{1,2})[/-](\d{2})\b(?![/-]\d)/g)) { const mo = +m[1], y = yr(m[2]); if (mo <= 12 && /exp|best|use|bb/i.test(t.slice(Math.max(0, m.index - 16), m.index))) add(y, mo, endOfMonth(y, mo), m.index, 'm-y'); }
   const seen = new Set(), oldest = iso(new Date(Date.now() - 365 * 864e5));
@@ -228,11 +230,16 @@ export function parseReceipt(text) {
       else pendingQty = { n, unit, ext };
       continue;
     }
+    // store apps' digital receipts: "Qty 2" on its own line, or the price alone under the name
+    const qline = l.match(/^\s*(?:qty|quantity)\s*[:x]?\s*(\d{1,3})\s*$/i);
+    if (qline) { if (last && !last.qtySet) { last.qty = Number(qline[1]); last.qtySet = true; } continue; }
+    const alone = l.match(/^\s*\$\s?(\d{1,4}[.,]\d{2})\s*$/);
+    if (alone && nameOnly) { last = pushItem(items, nameOnly, num(alone[1])); nameOnly = null; continue; }
     const m = l.match(/^(.*?[A-Za-z].*?)\s+(-)?\$?\s?(\d{1,4}[.,]\d{2})\s*(-)?\s*[A-Z]{0,2}\s*$/);
     if (!m) {
       if (/^\s*void\s*$/i.test(l)) { voidNext = true; continue; } // the next line is the item being taken back off
       // a name with its price on the next line ("BANANAS" then "2 @ 0.25 0.50")
-      if (/[A-Za-z]{3}/.test(l) && !NOT_ITEMS.test(l) && !SAVINGS.test(l) && l.length < 40) nameOnly = l; else nameOnly = null;
+      if (/[A-Za-z]{3}/.test(l) && !NOT_ITEMS.test(l) && !SAVINGS.test(l) && l.length < 80) nameOnly = l; else nameOnly = null;
       continue;
     }
     nameOnly = null;

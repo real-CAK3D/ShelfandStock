@@ -121,7 +121,8 @@ function globalSearch() {
       const draw = () => {
         const v = q.value.trim().toLowerCase();
         if (!v) { out.innerHTML = `<p class="muted small">Search your shelves, recipes and the food catalog.</p>`; return; }
-        const items = state.items.filter(i => `${i.name} ${i.brand} ${(i.tags || []).join(' ')}`.toLowerCase().includes(v)).slice(0, 12);
+        // brand, kind, size, store and barcode count too: "snuggle", "blue sparkle", "walmart"
+        const items = state.items.filter(i => `${i.name} ${i.brand} ${i.kind || ''} ${i.size || ''} ${i.store || ''} ${(i.batches || []).map(b => b.store || '').join(' ')} ${i.barcode || ''} ${(i.tags || []).join(' ')}`.toLowerCase().includes(v)).slice(0, 12);
         const rs = allRecipes().filter(r => r.title.toLowerCase().includes(v) || (r.tags || []).includes(v)).slice(0, 6);
         const have = new Set(items.map(i => i.foodId));
         const foods = searchFoods(v, 5).filter(f => !have.has(f.id));
@@ -267,4 +268,14 @@ function profileSheet() {
   paintMe();
   startLive();
   startNotify();
+  // receipts and screenshots shared into the app (Share → Shelf & Stock from the Walmart or Hannaford app, Gallery, Messages…)
+  window.larderShared = async () => {
+    const raw = window.LarderNative?.takeShared?.(); if (!raw) return;
+    let got; try { got = JSON.parse(raw); } catch { return; }
+    const files = (got.images || []).map((b64, i) => new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], `shared-${i}.jpg`, { type: 'image/jpeg' }));
+    const { receiptFlow } = await import('./ui/receipt.js');
+    go('list');
+    receiptFlow(files.length ? { files } : { text: [got.subject, got.text].filter(Boolean).join('\n') });
+  };
+  window.larderShared();
 })();

@@ -102,6 +102,12 @@ export function tripDetail(id, onPutAway) {
     title: `${esc(firstName(t.by))}'s store run`,
     html: `<p class="muted" style="margin-top:0">${esc(t.store || 'The store')} · ${dayWord(t.date)}${t.cutoff ? ` · list closes ${timeWord(t.cutoff)}` : ''}</p>
       ${(() => { const est = state.shopping.reduce((a, e) => { const pi = priceInfo(e.foodId, e.name); const at = pi.byStore.find(p => p.store === t.store) || pi.cheapest; return a + (at ? at.price * (Number(e.qty) || 1) : 0); }, 0); return est ? `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">💵 <span>Estimated total: <b>${money(est)}</b> (from past receipts)</span></div>` : ''; })()}
+      ${(() => {
+        // what to get on this run: things for this store or anywhere, then what's usually bought somewhere else
+        const open = state.shopping.filter(e => !e.done), here = open.filter(e => !e.store || e.store === t.store), elsewhere = open.filter(e => e.store && e.store !== t.store);
+        const line = e => `${e.emoji} ${esc(e.name)}${[e.brand, e.kind].filter(Boolean).length ? ` <small class="muted">(${esc([e.brand, e.kind].filter(Boolean).join(' '))})</small>` : ''}`;
+        return `${here.length ? `<div class="group-h">Get at ${esc(t.store || 'the store')} <span class="n">${here.length}</span><span class="line"></span></div><p style="margin:0 0 8px;line-height:1.7">${here.map(line).join(' · ')}</p>` : ''}${elsewhere.length ? `<div class="group-h">Usually bought elsewhere <span class="n">${elsewhere.length}</span><span class="line"></span></div><p class="small" style="margin:0 0 8px;line-height:1.7">${elsewhere.map(e => `${line(e)} <small class="muted">· ${esc(e.store)}</small>`).join(' · ')}</p>` : ''}`;
+      })()}
       ${Object.keys(reqBy).length ? `<div class="group-h">Who asked for what<span class="line"></span></div>${Object.entries(reqBy).map(([by, names]) => `<div class="act">${avatar(memberById(by), 30)}<span class="t"><b>${esc(firstName(by))}</b><small>${esc(names.join(', '))}</small></span></div>`).join('')}` : '<p class="muted">Nobody has added anything yet.</p>'}
       ${mine ? `<div class="row" style="gap:8px;margin-top:14px"><button class="btn btn-sage grow" data-done>✅ Done shopping</button><button class="btn btn-ghost" data-cancel>Cancel trip</button></div>` : ''}`,
     onMount: (b, close) => {
