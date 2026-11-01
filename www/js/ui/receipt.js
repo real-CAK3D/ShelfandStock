@@ -1,26 +1,32 @@
-// Scan a receipt → review the lines → save prices for that store (and tick matching list items).
+// Scan a receipt → check the lines → save prices for that store, put the groceries in the kitchen,
+// and take them off the shopping list. Then offer to read the real dates off the packages.
 
-import { state, update, recordReceipt, money } from '../store.js';
-import { FOOD_BY_ID, matchFood } from '../data/foods.js';
-import { readText, parseReceipt } from '../services/ocr.js';
+import { state, update, recordReceipt, money, stockFromReceipt, sectionById, parseQty } from '../store.js';
+import { FOOD_BY_ID, UNITS } from '../data/foods.js';
+import { readText, parseReceipt, matchName, cleanReceiptName, usingPhoneReader } from '../services/ocr.js';
 import { openSheet, esc, attr, toast, haptic, confetti, icon } from './dom.js';
 import { loader } from './loader.js';
 import { currentStore } from '../services/stores.js';
+import { labelWalk } from './itemSheet.js';
 
 export function receiptFlow() {
   openSheet({
     title: '🧾 Scan a receipt',
-    html: `<p class="muted" style="margin-top:0">Snap the whole receipt. Prices get saved per store, so the app can tell you where things are cheapest, and they feed the weekly spending summary.</p>
-      <div class="row" style="gap:8px"><label class="btn btn-brass grow">📸 Take a picture<input type="file" accept="image/*" capture="environment" data-rc hidden></label><label class="btn btn-ghost">🖼️ Photo<input type="file" accept="image/*" data-rc hidden></label></div>
+    html: `<p class="muted" style="margin-top:0">Snap the whole receipt, flat and in good light. Every grocery on it goes into your kitchen (you check the list first), comes off the shopping list, and its price is saved for that store.</p>
+      <ul class="small muted" style="margin:0 0 12px 18px;padding:0;line-height:1.5"><li>Lay it flat on a dark table, smooth out the creases</li><li>Fill the screen with it; a long receipt can be done in two photos</li><li>Hold steady so the small print is sharp</li></ul>
+      <div class="row" style="gap:8px"><label class="btn btn-brass grow">📸 Take a picture<input type="file" accept="image/*" capture="environment" data-rc hidden></label><label class="btn btn-ghost">🖼️ Photo<input type="file" accept="image/*" multiple data-rc hidden></label></div>
+      <p class="small muted" style="margin:10px 2px 0">${usingPhoneReader() ? '✨ Using your phone’s built-in text reader.' : 'Tip: the Android app reads receipts much more accurately than the browser.'}</p>
       <div data-rcout></div>`,
     onMount: (b, close) => b.querySelectorAll('[data-rc]').forEach(inp => inp.onchange = async () => {
-      const f = inp.files[0]; inp.value = ''; if (!f) return;
+      const files = [...inp.files]; inp.value = ''; if (!files.length) return;
       const out = b.querySelector('[data-rcout]');
       out.innerHTML = loader('Reading your receipt…', ['🧾', '🔍', '💵']);
       try {
-        const text = await readText(f, t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; });
+        // a long receipt in two or more photos: read each and put the text together
+        let text = '';
+        for (const [n, f] of files.entries()) text += '\n' + await readText(f, t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = files.length > 1 ? `Photo ${n + 1} of ${files.length}: ${t}` : t; }, { mode: 'receipt' });
         const r = parseReceipt(text);
-        if (!r.items.length) { out.innerHTML = '<div class="where-banner">🤔 <span>Couldn’t find any prices. Try a flatter, brighter photo of the whole receipt.</span></div>'; return; }
+        if (!r.items.length) { out.innerHTML = '<div class="where-banner">🤔 <span>Couldn’t find any groceries. Try a flatter, brighter photo of the whole receipt.</span></div>'; return; }
         close(); review(r);
       } catch (e) { out.innerHTML = '<div class="where-banner">📡 <span>The text reader needs an internet connection the first time.</span></div>'; }
     }),
@@ -30,42 +36,93 @@ export function receiptFlow() {
 function guessStore(head) {
   const saved = state.stores || [];
   const chain = head.match(/hannaford|walmart|shaw'?s|target|costco|aldi|market basket|kroger|safeway|publix|whole foods|trader joe'?s|bj'?s|sam'?s club|stop ?& ?shop|price chopper|dollar general|cvs|walgreens/i)?.[0];
-  return saved.find(s => head.toLowerCase().includes(s.name.toLowerCase().split(' ')[0])) || currentStore() || (chain ? { name: chain.replace(/\b\w/g, c => c.toUpperCase()) } : null);
+  return saved.find(s => head.toLowerCase().includes(s.name.toLowerCase().split(' ')[0])) || currentStore() || (chain ? { name: chain.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/'S\b/, "'s") } : null); // HANNAFORD → Hannaford
 }
+
+// where a line will go in the kitchen, for the review screen
+const whereFor = it => {
+  const ex = it.food && state.items.find(x => x.foodId === it.food.id && x.unit === it.unit);
+  if (ex) return `➕ adds to your ${esc(ex.name)}`;
+  return it.food ? `📍 ${esc(it.food.cat === 'kitchenware' ? 'kitchen gear' : 'new item')}` : '📍 new item';
+};
 
 function review(r) {
   const guess = guessStore(r.head);
   const names = [...new Set([...(state.stores || []).map(s => s.name), ...(guess ? [guess.name] : [])])];
+  const units = [...new Set(['ea', 'pack', 'lb', 'oz', 'gal', 'dozen', 'bag', 'box', 'can', 'jar', 'bottle', ...UNITS])];
+  const rows = r.items.map(it => ({ ...it, on: true }));
+  const sum = () => Math.round(rows.filter(x => x.on).reduce((a, x) => a + (Number(x.paid) || 0), 0) * 100) / 100;
   openSheet({
     title: 'Check the receipt',
     html: `
       <label class="field"><span>Store</span><input class="input" data-store list="rc-stores" value="${attr(guess?.name || '')}" placeholder="Which store?"><datalist id="rc-stores">${names.map(n => `<option value="${attr(n)}">`).join('')}</datalist></label>
-      <p class="small muted" style="margin:-6px 0 8px">Fix any names that came out wrong. Untick lines you don't want to save.</p>
-      ${r.items.map((it, i) => `<div class="irow" style="padding:6px 8px">
-        <input type="checkbox" data-on="${i}" checked style="width:20px;height:20px;accent-color:var(--sage)">
-        <span class="em" style="width:34px;height:34px;font-size:18px" data-emo="${i}">${it.food?.emoji || '🛒'}</span>
-        <span class="t"><input class="input" data-name="${i}" value="${attr(it.name)}" style="height:34px;font-size:14px;padding:0 8px"><small>${esc(it.raw)}</small></span>
-        <input class="input" data-price="${i}" value="${it.price.toFixed(2)}" inputmode="decimal" style="width:74px;height:34px;font-size:14px;padding:0 6px;text-align:right">
+      <div data-check></div>
+      <p class="small muted" style="margin:-4px 0 8px">Fix anything that came out wrong. <span class="pill warn" style="font-size:10.5px">check</span> means it’s a best guess; untick lines that aren’t groceries.</p>
+      ${rows.map((it, i) => `<div class="rc-row ${it.sure === 'check' ? 'guess' : !it.food ? 'nomatch' : ''}" data-row="${i}">
+        <input type="checkbox" data-on="${i}" checked aria-label="Include ${attr(it.name)}">
+        <span class="em" data-emo="${i}">${it.food?.emoji || '🛒'}</span>
+        <div class="rc-main">
+          <input class="input rc-name" data-name="${i}" value="${attr(it.name)}">
+          <small><span class="rc-raw">${esc(it.raw)}</span>${it.sure === 'check' ? ' <span class="pill warn">check</span>' : !it.food ? ' <span class="pill">not in catalog</span>' : ''}${it.discount ? ` <span class="pill ok">saved ${money(it.discount)}</span>` : ''}${it.fixed ? ' <span class="pill warn">price fixed from its quantity line</span>' : ''}</small>
+          <div class="rc-sub"><input class="input rc-qty" data-qty="${i}" value="${attr(it.qty)}" inputmode="decimal" aria-label="Amount"><select class="input rc-unit" data-unit="${i}">${units.map(u => `<option ${u === it.unit ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select><span class="rc-where" data-where="${i}">${whereFor(it)}</span></div>
+        </div>
+        <input class="input rc-price" data-price="${i}" value="${Number(it.paid).toFixed(2)}" inputmode="decimal" aria-label="Price">
       </div>`).join('')}
-      <div class="row" style="justify-content:space-between;margin:10px 4px"><b>Total</b><b data-total>${money(r.total ?? r.items.reduce((a, i) => a + i.price, 0))}</b></div>
-      <label class="row" style="margin:4px 0 12px"><span class="toggle"><input type="checkbox" data-tick checked><i></i></span><span>Tick these off the shopping list</span></label>
-      <button class="btn btn-brass btn-block" data-save>${icon('check')} Save prices</button>`,
+      <label class="row" style="margin:12px 0 6px"><span class="toggle"><input type="checkbox" data-stock checked><i></i></span><span><b>Put these in the kitchen</b><br><small class="muted">New batches on what you have, new items on their usual shelf</small></span></label>
+      <label class="row" style="margin:6px 0 12px"><span class="toggle"><input type="checkbox" data-tick checked><i></i></span><span>Take them off the shopping list</span></label>
+      <button class="btn btn-brass btn-block" data-save>${icon('check')} Save</button>`,
     onMount: (b, close) => {
-      b.querySelectorAll('[data-name]').forEach(inp => inp.onchange = () => { const f = matchFood(inp.value); b.querySelector(`[data-emo="${inp.dataset.name}"]`).textContent = f?.emoji || '🛒'; });
+      const check = () => {
+        const s = sum(), t = r.total;
+        b.querySelector('[data-check]').innerHTML = t == null
+          ? `<div class="where-banner" style="margin-bottom:10px">🧮 <span>${rows.filter(x => x.on).length} items, ${money(s)}. No total found on the receipt to compare with.</span></div>`
+          : Math.abs(s - t) <= Math.max(0.05, t * 0.12)
+            ? `<div class="where-banner" style="margin-bottom:10px;background:var(--sage-2);color:var(--sage)">✅ <span>${rows.filter(x => x.on).length} items add up to ${money(s)} of the ${money(t)} total${Math.abs(s - t) > 0.05 ? ' (the rest is likely tax or deposits)' : ''}.</span></div>`
+            : `<div class="where-banner" style="margin-bottom:10px">⚠️ <span>These add up to ${money(s)} but the receipt says ${money(t)}. ${s < t ? 'A line may be missing or misread: compare with the paper, or add a second photo.' : 'Something may be counted twice: check the prices.'}</span></div>`;
+      };
+      check();
+      b.querySelectorAll('[data-on]').forEach(cb => cb.onchange = () => { rows[cb.dataset.on].on = cb.checked; cb.closest('.rc-row').classList.toggle('off', !cb.checked); check(); });
+      b.querySelectorAll('[data-price]').forEach(inp => inp.onchange = () => { rows[inp.dataset.price].paid = Number(inp.value) || 0; check(); });
+      b.querySelectorAll('[data-qty]').forEach(inp => inp.onchange = () => { const v = parseQty(inp.value); if (isFinite(v) && v > 0) rows[inp.dataset.qty].qty = v; else inp.value = rows[inp.dataset.qty].qty; });
+      b.querySelectorAll('[data-unit]').forEach(sel => sel.onchange = () => { const it = rows[sel.dataset.unit]; it.unit = sel.value; it.unitTouched = true; b.querySelector(`[data-where="${sel.dataset.unit}"]`).innerHTML = whereFor(it); });
+      b.querySelectorAll('[data-name]').forEach(inp => inp.onchange = () => {
+        const i = inp.dataset.name, it = rows[i], m = matchName(cleanReceiptName(inp.value) || inp.value.toLowerCase());
+        it.name = m.food?.name || inp.value.trim(); it.food = m.food; it.sure = m.food ? 'high' : null;
+        if (m.food && !rows[i].unitTouched) { it.unit = m.food.unit; b.querySelector(`[data-unit="${i}"]`).value = it.unit; }
+        b.querySelector(`[data-emo="${i}"]`).textContent = m.food?.emoji || '🛒';
+        b.querySelector(`[data-where="${i}"]`).innerHTML = whereFor(it);
+        inp.closest('.rc-row').classList.remove('guess', 'nomatch'); if (!m.food) inp.closest('.rc-row').classList.add('nomatch');
+      });
       b.querySelector('[data-save]').onclick = () => {
         const store = b.querySelector('[data-store]').value.trim() || 'Unknown store';
-        const items = r.items.map((it, i) => {
-          if (!b.querySelector(`[data-on="${i}"]`).checked) return null;
-          const name = b.querySelector(`[data-name="${i}"]`).value.trim(), food = matchFood(name);
-          return { name: food?.name || name, foodId: food?.id || null, price: Number(b.querySelector(`[data-price="${i}"]`).value) || 0 };
-        }).filter(x => x && x.price > 0);
+        const chosen = rows.filter(x => x.on && x.name);
         const storeId = (state.stores || []).find(s => s.name === store)?.id;
-        recordReceipt({ store, storeId, total: r.total, items });
-        let ticked = 0;
-        if (b.querySelector('[data-tick]').checked) update(s => { for (const it of items) { const e = s.shopping.find(x => !x.done && (it.foodId ? x.foodId === it.foodId : x.name.toLowerCase() === it.name.toLowerCase())); if (e) { e.done = true; ticked++; } } }, 'list-check');
-        close(); haptic(25); confetti(innerWidth / 2, innerHeight / 2, 22);
-        toast(`Saved ${items.length} prices from ${store}${ticked ? ` · ticked ${ticked} off the list` : ''}`, { icon: '🧾' });
+        recordReceipt({ store, storeId, total: r.total, items: chosen.map(x => ({ name: x.name, foodId: x.food?.id || null, price: Number(x.paid) || 0 })).filter(x => x.price > 0) });
+        let placed = [], ticked = 0;
+        if (b.querySelector('[data-stock]').checked) {
+          const before = state.shopping.length;
+          placed = stockFromReceipt(chosen.map(x => ({ name: x.name, foodId: x.food?.id || null, qty: x.qty, unit: x.unit, cat: x.food?.cat || 'pantry', emoji: x.food?.emoji || '🛒' })));
+          ticked = before - state.shopping.length;
+        } else if (b.querySelector('[data-tick]').checked) update(s => { for (const x of chosen) { const e = s.shopping.find(y => !y.done && (x.food ? y.foodId === x.food.id : y.name.toLowerCase() === x.name.toLowerCase())); if (e) { e.done = true; ticked++; } } }, 'list-check');
+        close(); haptic(25); confetti(innerWidth / 2, innerHeight / 2, 26);
+        if (!placed.length) { toast(`Saved ${chosen.length} prices from ${store}${ticked ? ` · ticked ${ticked} off the list` : ''}`, { icon: '🧾' }); return; }
+        putAwaySheet(placed, store, ticked);
       };
+    },
+  });
+}
+
+// What went where, and a nudge to read the real dates off the packages.
+function putAwaySheet(placed, store, ticked) {
+  const ids = [...new Set(placed.map(p => p.item.id))];
+  openSheet({
+    title: 'In the kitchen 📦',
+    html: `<p class="muted" style="margin-top:0">${placed.length} thing${placed.length > 1 ? 's' : ''} from ${esc(store)} put away${ticked ? `, ${ticked} taken off the shopping list` : ''}. Dates are estimates until you read them off the packages.</p>
+      ${placed.map(p => { const s = sectionById(p.item.sectionId); return `<div class="irow"><span class="em">${p.item.emoji}</span><span class="t"><b>${esc(p.item.name)}</b><small>📍 ${s ? esc(s.zone.name + ' › ' + s.name) : ''}</small></span></div>`; }).join('')}
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn btn-ghost grow" data-later>Later</button><button class="btn btn-brass grow" data-walk>🏷️ Date them now</button></div>`,
+    onMount: (b, close) => {
+      b.querySelector('[data-later]').onclick = () => { close(); toast('Find them anytime under Stock › Undated', { icon: '🏷️' }); };
+      b.querySelector('[data-walk]').onclick = () => { close(); labelWalk(ids.filter(id => FOOD_BY_ID[state.items.find(i => i.id === id)?.foodId]?.cat !== 'kitchenware'), { title: 'Date your groceries' }); };
     },
   });
 }

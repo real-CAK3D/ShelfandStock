@@ -6,11 +6,15 @@ android {
         applicationId 'com.cak3d.shelfandstock'
         minSdk 24
         targetSdk 36
-        versionCode 10502
-        versionName '1.5.2'
+        versionCode 10600
+        versionName '1.6.0'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { release { minifyEnabled false } }
     // the web app is copied in by build.sh
     sourceSets { main { assets.srcDirs = ['src/main/assets'] } }
+}
+dependencies {
+    // Google ML Kit text recognition through Play services: free, on the phone, offline once the model is in
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
 }

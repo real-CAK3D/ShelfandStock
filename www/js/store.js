@@ -365,12 +365,16 @@ export const recipeById = id => allRecipes().find(r => r.id === id);
 const staples = () => new Set(state.settings.stapleIds);
 
 // servings: scale the recipe; quantities are compared only when stock uses the same unit.
+// water in a recipe comes from the tap: always on hand, never on the list
+const TAP_WATER = /^\s*(cold |warm |hot |boiling |ice |lukewarm |tap )?water\s*$/i;
+
 export function recipeMatch(r, servings = r.servings) {
   const st = staples();
   const rows = r.ingredients.map(ing => {
-    const food = ing.foodId ? FOOD_BY_ID[ing.foodId] : matchFood(ing.name);
-    const stock = stockFor(ing.name, food?.id);
-    const staple = food && st.has(food.id);
+    const tap = TAP_WATER.test(ing.name);
+    const food = tap ? null : ing.foodId ? FOOD_BY_ID[ing.foodId] : matchFood(ing.name);
+    const stock = tap ? [] : stockFor(ing.name, food?.id);
+    const staple = tap || (food && st.has(food.id));
     const need = scaleQty(ing.qty, r.servings, servings);
     const sameUnit = stock.filter(it => it.unit === ing.unit);
     const onHand = sameUnit.reduce((a, it) => a + Number(it.qty), 0);
@@ -438,6 +442,34 @@ export function checkOffToStock(id) {
     }, 'list-stock');
   }
   return { item: it, batchId: null };
+}
+
+// Groceries straight off a receipt into the kitchen: each line becomes a new batch on the item you
+// already have (same food and unit) or a new item on its usual shelf, with an estimated date, and
+// anything it covers comes off the shopping list. Returns [{ item, batchId }] for dating afterwards.
+export function stockFromReceipt(lines) {
+  const placed = [];
+  for (const l of lines) {
+    const food = l.foodId ? FOOD_BY_ID[l.foodId] : null;
+    const existing = food && state.items.find(it => it.foodId === food.id && it.unit === l.unit);
+    if (existing) {
+      const life = shelfLifeDays(food, storageKind(existing));
+      const batchId = restockItem(existing.id, { qty: l.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated' });
+      placed.push({ item: state.items.find(i => i.id === existing.id), batchId });
+    } else {
+      const it = makeItem({ name: l.name, foodId: food?.id || null, qty: l.qty, unit: l.unit, cat: food?.cat || l.cat, emoji: food?.emoji || l.emoji });
+      update(s => { s.items.push(it); }, 'item-add');
+      placed.push({ item: it, batchId: null });
+    }
+  }
+  update(s => {
+    for (const l of lines) {
+      s.history.push({ ts: Date.now(), by: who(), type: 'bought', name: l.name, foodId: l.foodId || null, qty: l.qty, cat: l.cat || FOOD_BY_ID[l.foodId]?.cat });
+      const e = s.shopping.find(x => !x.done && (l.foodId ? x.foodId === l.foodId : x.name.toLowerCase() === l.name.toLowerCase()));
+      if (e) s.shopping = s.shopping.filter(x => x !== e);
+    }
+  }, 'list-stock');
+  return placed;
 }
 
 // Smart suggestions: what you "should get".

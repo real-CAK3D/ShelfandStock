@@ -38,7 +38,8 @@ async function getModel(onStatus) {
 export async function photoFromFile(file, size = 320) {
   const url = URL.createObjectURL(file);
   try {
-    const img = new Image(); img.src = url; await img.decode();
+    // wait on load, not img.decode(): decode can stall if the app goes to the background mid-way
+    const img = new Image(); await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
     const s = Math.min(1, size / Math.max(img.width, img.height));
     const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);

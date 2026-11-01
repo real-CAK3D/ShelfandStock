@@ -12,6 +12,7 @@ import { me, memberById, firstName, avatar } from '../services/people.js';
 import { recallMatches, recallSheet } from '../services/recalls.js';
 import { unitPriceSheet } from '../ui/unitprice.js';
 import { inSeason } from '../data/inseason.js';
+import { recipeEditor } from './recipes.js';
 
 const ORDER = CATEGORIES.map(c => c.id);
 let morePerish = false, moreRestock = false; // the suggestion lists start short
@@ -33,7 +34,7 @@ export function render(root) {
     ${tripBannerHTML()}
     <div data-live>${liveStripHTML()}</div>
     <div class="row" style="margin:12px 12px 0;gap:8px">${mineTrip ? '' : `<button class="btn btn-wood wood-mid grow" data-trip-new>🚗 I'm going to the store</button>`}<button class="btn btn-ghost ${mineTrip ? 'grow' : ''}" data-receipt>🧾${mineTrip ? ' Scan receipt' : ''}</button></div>
-    <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-unitprice>⚖️ Which is cheaper?</button><button class="btn btn-ghost btn-sm grow ${recalls.length ? 'recall-btn' : ''}" data-recalls>🛡️ ${recalls.length ? `${recalls.length} recall${recalls.length > 1 ? 's' : ''} to check` : 'Recalls'}</button></div>
+    <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-unitprice>⚖️ Which is cheaper?</button><button class="btn btn-ghost btn-sm grow" data-recipephoto>📖 Recipe photo</button><button class="btn btn-ghost btn-sm grow ${recalls.length ? 'recall-btn' : ''}" data-recalls>🛡️ ${recalls.length ? `${recalls.length} recall${recalls.length > 1 ? 's' : ''} to check` : 'Recalls'}</button></div>
     <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new list="food-dl"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
     <datalist id="food-dl"></datalist>
     ${sugg.length ? `<div class="chips" style="margin-top:8px">${sugg.slice(0, 8).map(x => `<button class="chip" data-sugg="${sugg.indexOf(x)}" title="${attr(x.reason)}">${x.emoji} ${esc(x.name)} <span class="n">${x.icon}</span></button>`).join('')}</div>` : ''}
@@ -82,6 +83,7 @@ export function render(root) {
     if (e.target.closest('[data-moreperish]')) { morePerish = !morePerish; return render(root); }
     if (e.target.closest('[data-morerestock]')) { moreRestock = !moreRestock; return render(root); }
     if (e.target.closest('[data-unitprice]')) return unitPriceSheet();
+    if (e.target.closest('[data-recipephoto]')) return recipeEditor({ fromPhoto: true }); // read a recipe, add what's missing
     if (e.target.closest('[data-recalls]')) return recallSheet();
     const sa = e.target.closest('[data-season-add]'); if (sa) { const f = FOOD_BY_ID[sa.dataset.seasonAdd]; addToList({ foodId: f.id, name: f.name, reason: 'In season' }); haptic(); toast(`${f.name} → list`, { icon: '🌱' }); return; }
     if (e.target.closest('[data-trip-new]')) return tripSheet();

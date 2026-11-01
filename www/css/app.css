@@ -861,3 +861,28 @@ img.emo { width: 1.18em; height: 1.18em; vertical-align: -0.22em; object-fit: co
 .fr-bin .shelf-sec { margin: 0; padding: 4px 0 2px; }
 .fr-bin .shelf-sec::after { display: none; }
 .fr-bin .jar { width: 70px; }
+
+/* receipt review: one row per line on the receipt */
+.rc-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px; margin-bottom: 8px; border-radius: 14px; background: var(--paper); box-shadow: 0 1px 2px rgba(60,30,10,.08); border: 1px solid rgba(110,70,40,.07); transition: opacity .2s; }
+.rc-row.guess { border-color: #e6c27a; background: #fdf6e6; }
+.rc-row.nomatch { border-style: dashed; }
+.rc-row.off { opacity: .45; }
+.rc-row > input[type=checkbox] { width: 20px; height: 20px; margin-top: 8px; accent-color: var(--sage); flex: 0 0 auto; }
+.rc-row .em { width: 34px; height: 34px; font-size: 18px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: var(--paper-2); }
+.rc-main { flex: 1; min-width: 0; }
+.rc-name { height: 34px; font-size: 14px; padding: 0 8px; font-weight: 600; }
+.rc-main small { display: block; margin: 3px 2px 0; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
+.rc-raw { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; }
+.rc-sub { display: flex; gap: 6px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
+.rc-qty { width: 56px; height: 30px; font-size: 13px; padding: 0 6px; text-align: center; }
+.rc-unit { width: 78px; height: 30px; font-size: 12.5px; padding: 0 4px; }
+.rc-where { font-size: 11px; color: var(--ink-3); }
+.rc-price { width: 68px; height: 34px; font-size: 14px; padding: 0 6px; text-align: right; flex: 0 0 auto; }
+
+/* recipe editor: how each ingredient line was read */
+.ing-prev { margin: -6px 0 14px; display: flex; flex-direction: column; gap: 4px; }
+.ing-row { display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; border-radius: 10px; background: var(--paper-2); font-size: 13px; }
+.ing-row b { font-weight: 600; flex: 1; min-width: 0; }
+.ing-row small { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+.ing-row.missing { background: #fdf3e2; }
+.ing-row.unknown { background: none; border: 1px dashed var(--paper-3); }

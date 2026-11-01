@@ -80,6 +80,7 @@ const ROWS = [
   ['Chicken Breast', '🍗', 'meat', F, 2, 270, 0, 'lb', 'chicken breasts,boneless chicken,chicken'],
   ['Chicken Thighs', '🍗', 'meat', F, 2, 270, 0, 'lb', 'chicken thigh'],
   ['Whole Turkey', '🦃', 'meat', Z, 2, 365, 0, 'lb', 'turkey'],
+  ['Stew Meat', '🥩', 'meat', F, 2, 120, 0, 'lb', 'beef stew meat,stew beef,beef chunks,chuck roast,beef cubes'],
   ['Ground Beef', '🥩', 'meat', F, 2, 120, 0, 'lb', 'hamburger,minced beef,beef mince'],
   ['Steak', '🥩', 'meat', F, 4, 270, 0, 'lb', 'ribeye,sirloin,new york strip'],
   ['Pork Chops', '🥩', 'meat', F, 4, 180, 0, 'lb', 'pork chop'],

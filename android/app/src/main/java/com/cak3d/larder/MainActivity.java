@@ -6,7 +6,10 @@ import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -36,6 +39,15 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 // Shelf & Stock runs entirely from files bundled in the APK, served on a virtual https origin so
 // ES modules, localStorage and the service-worker-free offline mode all behave like the web.
@@ -158,8 +170,48 @@ public class MainActivity extends Activity {
         return m != null ? m : "application/octet-stream";
     }
 
+    private TextRecognizer recognizer;
+
+    // Hand OCR results back to the page (base64 so any text survives the trip).
+    private void ocrDone(int id, boolean ok, String json) {
+        final String b64 = Base64.encodeToString(json.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        runOnUiThread(() -> web.evaluateJavascript("window.__nativeOcrDone && window.__nativeOcrDone(" + id + "," + ok + ",'" + b64 + "')", null));
+    }
+
     // Native helpers the web app uses when present (window.LarderNative).
     private class Bridge {
+        // Read text in a photo with Google ML Kit (on the phone, offline). Returns every line with its
+        // corner points so the page can rebuild receipt rows (item on the left, price on the right).
+        @JavascriptInterface
+        public void recognizeText(final int id, final String jpegB64) {
+            new Thread(() -> {
+                try {
+                    byte[] bytes = Base64.decode(jpegB64, Base64.DEFAULT);
+                    Bitmap bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    if (bmp == null) { ocrDone(id, false, "[]"); return; }
+                    if (recognizer == null) recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+                    recognizer.process(InputImage.fromBitmap(bmp, 0))
+                        .addOnSuccessListener(result -> {
+                            JSONArray out = new JSONArray();
+                            try {
+                                for (Text.TextBlock block : result.getTextBlocks())
+                                    for (Text.Line line : block.getLines()) {
+                                        Point[] c = line.getCornerPoints();
+                                        if (c == null || c.length < 4) continue;
+                                        JSONObject o = new JSONObject();
+                                        o.put("t", line.getText());
+                                        o.put("x0", c[0].x); o.put("y0", c[0].y); o.put("x1", c[1].x); o.put("y1", c[1].y);
+                                        o.put("x3", c[3].x); o.put("y3", c[3].y);
+                                        out.put(o);
+                                    }
+                            } catch (Exception ignored) { }
+                            ocrDone(id, true, out.toString());
+                        })
+                        .addOnFailureListener(e -> ocrDone(id, false, "[]"));
+                } catch (Throwable t) { ocrDone(id, false, "[]"); }
+            }).start();
+        }
+
         // CORS-free GET for APIs that don't send CORS headers; result returns base64 to JS.
         @JavascriptInterface
         public void fetch(final int id, final String url) {

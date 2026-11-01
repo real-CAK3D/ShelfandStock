@@ -3,6 +3,7 @@
 import { state, update, allRecipes, recipeById, recipeMatch, addToList, fmtQty, scaleQty, itemStatus, saveEvent, uid, today, removeItem, adjustQty, fmtDate, who } from '../store.js';
 import { MEAL_TYPES } from '../data/recipes.js';
 import { matchFood } from '../data/foods.js';
+import { readText, parseRecipeText } from '../services/ocr.js';
 import { esc, attr, icon, $, $$, segmented, openSheet, toast, haptic, confetti, confirmBox, flyTo } from '../ui/dom.js';
 import { crumb } from '../ui/itemSheet.js';
 import { searchMeals, mealsWithIngredient, mealById, randomMeal } from '../services/mealdb.js';
@@ -40,6 +41,7 @@ export function render(root, params = {}) {
     const og = e.target.closest('[data-og]'); if (og) return runOnline(root, og.dataset.og, og.dataset.mode);
     if (e.target.closest('[data-random]')) { online.loading = true; draw(root); try { const m = await randomMeal(); online = { results: m ? [m] : [], q: 'Surprise!', loading: false }; } catch { online = { results: [], loading: false, err: 'offline' }; } return draw(root); }
     if (e.target.closest('[data-new]')) return recipeEditor();
+    if (e.target.closest('[data-newphoto]')) return recipeEditor({ fromPhoto: true });
   };
   draw(root);
 }
@@ -57,6 +59,7 @@ function draw(root) {
     const scored = pool.map(r => ({ r, m: recipeMatch(r) })).sort((a, b) => b.m.pct - a.m.pct || Number(b.m.usesExpiring) - Number(a.m.usesExpiring) || a.m.missing.length - b.m.missing.length);
     const ready = scored.filter(x => x.m.pct >= .99), close = scored.filter(x => x.m.pct < .99 && x.m.missing.length <= 3), rescue = scored.filter(x => x.m.usesExpiring).slice(0, 8);
     body.innerHTML = types + `
+      <div class="row" style="margin:6px 16px 0;justify-content:flex-end"><button class="btn btn-ghost btn-sm" data-newphoto>📷 Add a recipe from a photo</button></div>
       ${rescue.length ? `<div class="section-title"><h2>Rescue what's expiring</h2></div><div class="shelf stagger">${rescue.map(x => card(x.r, x.m)).join('')}</div>` : ''}
       <div class="section-title"><h2>Ready to cook</h2><span class="small muted">${ready.length} recipes</span></div>
       ${ready.length ? `<div class="rgrid stagger">${ready.map(x => card(x.r, x.m)).join('')}</div>` : `<div class="empty" style="padding:20px"><span class="big">🧺</span>Nothing fully stocked yet — see what's close below.</div>`}
@@ -67,7 +70,7 @@ function draw(root) {
     const q = ui.q.toLowerCase();
     const shown = list.filter(r => !q || `${r.title} ${r.cuisine} ${(r.tags || []).join(' ')} ${r.ingredients.map(i => i.name).join(' ')}`.toLowerCase().includes(q));
     body.innerHTML = `<div class="search">${icon('search')}<input class="input" placeholder="Search title, tag, ingredient…" value="${attr(ui.q)}" data-rq></div>` + types +
-      `<div class="row" style="margin:6px 16px 10px;justify-content:space-between"><span class="small muted">${shown.length} recipes</span><button class="btn btn-ghost btn-sm" data-new>${icon('plus')} New recipe</button></div>` +
+      `<div class="row" style="margin:6px 16px 10px;justify-content:space-between"><span class="small muted">${shown.length} recipes</span><span class="row" style="gap:6px"><button class="btn btn-ghost btn-sm" data-newphoto>📷 From a photo</button><button class="btn btn-ghost btn-sm" data-new>${icon('plus')} New</button></span></div>` +
       (shown.length ? `<div class="rgrid stagger">${shown.map(r => card(r, recipeMatch(r))).join('')}</div>` : `<div class="empty"><span class="big">${ui.tab === 'fav' ? '🤍' : '📖'}</span>${ui.tab === 'fav' ? 'Tap the heart on any recipe to save it here.' : 'No recipes match.'}</div>`);
     const rq = $('[data-rq]', body);
     rq.oninput = () => { ui.q = rq.value; const pos = rq.selectionStart; draw(root); const n = $('[data-rq]', root); n.focus(); n.setSelectionRange(pos, pos); };
@@ -216,25 +219,60 @@ function planRecipe(r, servings) {
   });
 }
 
-// ---------- create your own ----------
-export function recipeEditor() {
+// ---------- create your own (typed, or read off a photo of a recipe card or cookbook page) ----------
+export function recipeEditor({ fromPhoto = false } = {}) {
   openSheet({
-    title: 'New recipe',
+    title: fromPhoto ? '📷 Recipe from a photo' : 'New recipe',
     html: `<form autocomplete="off">
-      <div class="row" style="gap:10px"><label class="field" style="width:76px"><span>Icon</span><input class="input" name="emoji" value="🍲" style="text-align:center;font-size:24px"></label><label class="field grow"><span>Title</span><input class="input" name="title" required placeholder="Grandma's chili"></label></div>
+      <div class="row" style="gap:8px;margin-bottom:6px"><label class="btn ${fromPhoto ? 'btn-brass' : 'btn-wood wood-mid'} grow">📷 ${fromPhoto ? 'Take a picture of the recipe' : 'Fill from a photo'}<input type="file" accept="image/*" capture="environment" data-rphoto hidden></label><label class="btn btn-ghost" title="Pick photos (a recipe on two pages works too)">🖼️<input type="file" accept="image/*" multiple data-rphoto hidden></label></div>
+      <div data-rpout>${fromPhoto ? '<p class="small muted" style="margin:4px 2px 10px">A recipe card, a cookbook page or a printout. Flat, in good light, filling the screen. Then check what was read before saving.</p>' : ''}</div>
+      <div class="row" style="gap:10px"><label class="field" style="width:76px"><span>Icon</span><input class="input" name="emoji" value="🍲" maxlength="4" style="text-align:center;font-size:24px"></label><label class="field grow"><span>Title</span><input class="input" name="title" required placeholder="Grandma's chili"></label></div>
       <div class="row" style="gap:10px"><label class="field grow"><span>Type</span><select class="input" name="type">${MEAL_TYPES.map(t => `<option ${t === 'Dinner' ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label class="field" style="width:90px"><span>Serves</span><input class="input" name="servings" type="number" value="4"></label><label class="field" style="width:90px"><span>Minutes</span><input class="input" name="time" type="number" value="30"></label></div>
-      <label class="field"><span>Ingredients — one per line</span><textarea class="input" name="ing" rows="6" placeholder="2 lb ground beef\n1 can kidney beans\n1 onion, diced\n2 tbsp chili powder"></textarea></label>
+      <label class="field"><span>Ingredients — one per line</span><textarea class="input" name="ing" rows="6" placeholder="2 lb ground beef&#10;1 can kidney beans&#10;1 onion, diced&#10;2 tbsp chili powder"></textarea></label>
+      <div data-ingprev class="ing-prev"></div>
       <label class="field"><span>Steps — one per line</span><textarea class="input" name="steps" rows="5"></textarea></label>
       <label class="field"><span>Tags</span><input class="input" name="tags" placeholder="comfort, game day"></label>
+      <label class="row" style="margin:4px 0 12px"><span class="toggle"><input type="checkbox" name="shop" ${fromPhoto ? 'checked' : ''}><i></i></span><span>Add what I’m missing to the shopping list</span></label>
       <button class="btn btn-brass btn-block">${icon('check')} Save recipe</button></form>`,
     onMount: (b, close) => {
-      $('form', b).onsubmit = e => {
+      const f = $('form', b), prev = $('[data-ingprev]', b);
+      // how each ingredient line was understood, and whether it's already in the kitchen
+      const preview = () => {
+        const lines = f.ing.value.split('\n').map(l => l.trim()).filter(Boolean);
+        if (!lines.length) { prev.innerHTML = ''; return; }
+        const ings = lines.map(parseLine), servings = Number(f.servings.value) || 4;
+        const missing = new Set(recipeMatch({ ingredients: ings, servings }, servings).missing.map(x => x.ing));
+        const tap = i => /^\s*(cold |warm |hot |boiling |ice |lukewarm |tap )?water\s*$/i.test(i.name);
+        prev.innerHTML = ings.map(i => `<div class="ing-row ${tap(i) ? 'have' : !i.foodId ? 'unknown' : missing.has(i) ? 'missing' : 'have'}"><span>${tap(i) ? '🚰' : !i.foodId ? '❓' : missing.has(i) ? '🛒' : '✅'}</span><b>${esc(fmtQty(i.qty))} ${esc(i.unit === 'ea' ? '' : i.unit)} ${esc(i.name)}</b><small>${tap(i) ? 'from the tap' : !i.foodId ? 'not in the food list (still saved)' : missing.has(i) ? 'need to buy' : 'you have it'}</small></div>`).join('');
+      };
+      f.ing.addEventListener('input', preview); f.servings.addEventListener('input', preview);
+      b.querySelectorAll('[data-rphoto]').forEach(inp => inp.onchange = async () => {
+        const files = [...inp.files]; inp.value = ''; if (!files.length) return;
+        const out = $('[data-rpout]', b);
+        out.innerHTML = loader('Reading the recipe…', ['📖', '🔍', '🥕']);
+        try {
+          let text = '';
+          for (const file of files) text += '\n' + await readText(file, t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; }, { mode: 'recipe' });
+          const r = parseRecipeText(text);
+          if (!r.ingredients.length && !r.steps.length) { out.innerHTML = '<div class="where-banner">🤔 <span>Couldn’t make out a recipe. Try a flatter, closer photo.</span></div>'; return; }
+          if (r.title) f.title.value = r.title;
+          if (r.servings) f.servings.value = r.servings;
+          if (r.time) f.time.value = r.time;
+          f.ing.value = r.ingredients.join('\n'); f.steps.value = r.steps.join('\n');
+          const guess = matchFood(r.title); if (guess) f.emoji.value = guess.emoji;
+          out.innerHTML = `<div class="where-banner" style="background:var(--sage-2);color:var(--sage);margin-bottom:10px">📖 <span>Read <b>${r.ingredients.length} ingredients</b> and <b>${r.steps.length} steps</b>. Check them below and fix anything that came out wrong.</span></div>`;
+          preview(); haptic(20);
+        } catch (e) { out.innerHTML = '<div class="where-banner">📡 <span>The text reader needs an internet connection the first time.</span></div>'; }
+      });
+      f.onsubmit = e => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(e.target));
         const ingredients = d.ing.split('\n').map(l => l.trim()).filter(Boolean).map(parseLine);
         const r = { id: 'u-' + uid(), source: 'user', title: d.title.trim(), emoji: d.emoji || '🍲', type: d.type, cuisine: '', time: Number(d.time) || null, servings: Number(d.servings) || 4, tags: d.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean), ingredients, steps: d.steps.split('\n').map(s => s.trim()).filter(Boolean) };
         update(s => { s.recipes.unshift(r); }, 'recipe-new');
-        close(); toast('Recipe saved', { icon: '📖' }); openRecipe(r.id);
+        let n = 0;
+        if (d.shop) for (const x of recipeMatch(r).missing) if (addToList({ name: x.food?.name || x.ing.name, foodId: x.food?.id, qty: x.short || x.need, unit: x.ing.unit, reason: r.title })) n++;
+        close(); toast(n ? `Recipe saved · ${n} item${n > 1 ? 's' : ''} added to your list` : 'Recipe saved', { icon: '📖' }); openRecipe(r.id);
       };
     },
   });
@@ -242,12 +280,17 @@ export function recipeEditor() {
 
 const UNITS_RE = /^(cups?|tbsp|tablespoons?|tsp|teaspoons?|lbs?|pounds?|oz|ounces?|g|grams?|kg|ml|l|cans?|jars?|cloves?|bunch(?:es)?|heads?|packets?|pinch|dozen|pints?|quarts?|qt|gal|bags?|box(?:es)?|sticks?|slices?)\b/i;
 export function parseLine(line) {
+  // ½, 1½, ¾ … as 1/2, 1 1/2, 3/4
+  line = line.replace(/(\d)?\s*([¼½¾⅓⅔⅛])/g, (m, w, f) => `${w ? w + ' ' : ''}${{ '¼': '1/4', '½': '1/2', '¾': '3/4', '⅓': '1/3', '⅔': '2/3', '⅛': '1/8' }[f]}`);
+  // common photo misreads: "lb" as "1b"/"Ib", and "1 1/2" run together as "11/2" (eleven halves)
+  line = line.replace(/(\d)\s*[1I]b(s?)\b/g, '$1 lb$2').replace(/^(\s*)(\d)([1-7])\/([2348])\b/, (m, sp, w, n, d) => Number(n) < Number(d) ? `${sp}${w} ${n}/${d}` : m);
   let qty = 1, unit = 'ea', rest = line;
   const m = rest.match(/^(\d+\s+\d\/\d|\d+\/\d|\d*\.?\d+)\s*/);
   if (m) { qty = m[1].includes('/') ? m[1].split(/\s+/).reduce((a, p) => { const [x, y] = p.split('/'); return a + (y ? x / y : Number(x)); }, 0) : Number(m[1]); rest = rest.slice(m[0].length); }
   const u = rest.match(UNITS_RE);
   if (u) { unit = u[1].toLowerCase().replace(/^tablespoons?$/, 'tbsp').replace(/^teaspoons?$/, 'tsp').replace(/^(pounds?|lbs)$/, 'lb').replace(/^ounces?$/, 'oz').replace(/(ch|sh|x|ss)es$/, '$1').replace(/([^s])s$/, '$1'); rest = rest.slice(u[0].length).trim(); } // bunches → bunch, boxes → box, cans → can
   const [name, ...note] = rest.split(',');
-  const food = matchFood(name);
+  // "water", "hot water", "ice water" in a recipe is from the tap, not something to buy
+  const food = /^\s*(cold |warm |hot |boiling |ice |lukewarm |tap )?water\s*$/i.test(name) ? null : matchFood(name);
   return { qty: Math.round(qty * 100) / 100, unit, name: food?.name || name.trim(), note: note.join(',').trim(), optional: /optional/i.test(line), foodId: food?.id || null };
 }
