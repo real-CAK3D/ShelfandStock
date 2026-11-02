@@ -1,23 +1,27 @@
-// Home: the illustrated kitchen. Tap a door to swing it open and look inside.
+// Home: the illustrated house, room by room. Tap a door to swing it open and look inside.
 
 import { state, itemStatus, isLow, fmtDate, fmtQty, recipeById, recipeMatch, today, suggestions, sectionById, allRecipes, subscribe, tint } from '../store.js';
 import { FOOD_BY_ID } from '../data/foods.js';
+import { HOUSE_ROOMS } from '../data/layout.js';
 import { esc, attr, icon, $, $$, countUp, imgOrEmoji, haptic } from '../ui/dom.js';
 import { showItem, labelWalk } from '../ui/itemSheet.js';
+import { fillPhotos } from '../services/photos.js';
+import { boxSheet, boxesOn, boxTileHTML, visibleItem, newBox, act, packSheet, waitingForMe, myAnswers, approvalsSheet } from '../ui/boxes.js';
 import { actions } from '../router.js';
 import { holidaysFor } from '../data/holidays.js';
 import { activityHTML, tripBannerHTML, tripDetail, liveStripHTML } from '../ui/house.js';
 import { weekCardHTML, reportSheet } from '../ui/report.js';
 import { recallMatches, recallSheet } from '../services/recalls.js';
 
-// ---------- the rooms (swipe pages) ----------
-// Boxes are [left, top, width, height] in % of the wall. Swiping right from the stove wall
-// brings in the garage, so the garage page sits to the left and the kitchen continues right.
+// ---------- the house: rooms, each with walls you swipe between ----------
+// Boxes are [left, top, width, height] in % of the wall. In the kitchen, swiping right from the stove wall
+// brings in the pantry and then the garage fridges, so those pages sit to the left and the kitchen continues right.
 const Z = (zone, x, y, w, h, o = {}) => ({ zone, box: [x, y, w, h], ...o });
 const D = (cls, x, y, w, h, html = '') => ({ deco: cls, box: [x, y, w, h], html });
 
-const ROOMS = [
-  { id: 'garage', label: '🚗 Garage', wall: 'concrete', parts: [
+const KITCHEN = [
+  // the garage fridge & freezers belong to the kitchen (they're drawn on the garage's right wall as well)
+  { id: 'g-fridges', label: '🧊 Garage Fridges', wall: 'concrete', parts: [
     D('g-track', 0, 0, 100, 5), D('g-pegboard', 6, 10, 26, 22, '<span>🔧</span><span>🪛</span><span>🔨</span>'),
     Z('g-fridge-fz', 6, 40, 34, 15, { type: 'steel', label: '❄️ Freezer' }),
     Z('g-fridge', 6, 56, 34, 33, { type: 'steel', label: 'Fridge' }),
@@ -83,14 +87,100 @@ const ROOMS = [
     D('floor', 0, 88, 100, 12),
   ] },
 ];
-const HOME_ROOM = 2; // the stove wall; swipe right for the pantry, then the garage
-let room = HOME_ROOM; // kept across re-renders
-export const showRoom = n => { room = n; };
-export const roomOfZone = zoneId => ROOMS.findIndex(r => r.parts.some(p => p.zone === zoneId));
-// the walls in walking order (stove, sink, corner, then back past the pantry to the garage), for grouping storage in Settings
-export const roomList = () => [...ROOMS.slice(HOME_ROOM), ...ROOMS.slice(0, HOME_ROOM).reverse()].map(r => ({ id: r.id, label: r.label, zones: r.parts.filter(p => p.zone).map(p => p.zone) }));
-const DRAWN = new Set(ROOMS.flatMap(r => r.parts.map(p => p.zone).filter(Boolean)));
-const itemsIn = zoneId => { const z = state.zones.find(z => z.id === zoneId); if (!z) return []; const ids = new Set(z.sections.map(s => s.id)); return state.items.filter(i => ids.has(i.sectionId)); };
+
+// The bathroom as photographed: white tile over a wood wainscot. The vanity wall has the three-door
+// mirrored medicine cabinet over the sink, the counter, one door on the left under it, two drawers on the right.
+const BATHROOM = [
+  { id: 'vanity', label: '🪥 Vanity', wall: 'tile', parts: [
+    D('wainscot', 0, 44, 100, 56), D('chair-rail', 0, 43, 100, 2.5),
+    Z('med-l', 22, 2, 18.5, 33, { type: 'mirror' }), Z('med-c', 41, 2, 18.5, 33, { type: 'mirror' }), Z('med-r', 60, 2, 18.5, 33, { type: 'mirror', hinge: 'right' }),
+    D('mirror-ledge', 21, 35, 58.5, 2.6),
+    Z('bath-counter', 18, 41, 66, 10.5, { type: 'counter' }),
+    D('vanity-top', 16, 51.5, 70, 4.5), D('vanity-bowl', 38, 52, 26, 3.4), D('faucet', 48, 44.5, 6, 8),
+    D('oak-front', 18, 56.5, 66, 6),
+    Z('bath-sink', 18, 63, 34, 25, { finish: 'wood-v' }),
+    Z('bath-dr-1', 53, 63, 31, 11.5, { type: 'drawer' }), Z('bath-dr-2', 53, 75.5, 31, 12.5, { type: 'drawer' }),
+    Z('bath-towels', 2, 46, 13, 22, { type: 'towels' }),
+    D('bath-floor', 0, 88, 100, 12),
+  ] },
+  // the stand-up closet: five shelves and the floor behind a tall door
+  { id: 'closet', label: '🚪 Closet', wall: 'tile', parts: [
+    D('wainscot', 0, 44, 100, 56), D('chair-rail', 0, 43, 100, 2.5),
+    D('closet-frame', 20, 1.5, 60, 86.5),
+    Z('bath-closet', 23, 4, 54, 84, { type: 'closet', cls: 'shelves' }),
+    D('hamper', 82, 66, 15, 22, '<span>🧺</span>'),
+    D('bath-floor', 0, 88, 100, 12),
+  ] },
+];
+
+// The garage, walking around it: the left wall, the closed two-bay door at the back, then the right wall
+// ending at the kitchen's garage fridge and freezers.
+const GARAGE = [
+  { id: 'g-left', label: '⬅️ Left Wall', wall: 'concrete', parts: [
+    D('g-track', 0, 0, 100, 5),
+    Z('gar-camp', 2, 8, 30, 52, { type: 'shelf' }),
+    Z('gar-cab', 35, 8, 33, 34, { type: 'double', finish: 'wood-v' }),
+    Z('gar-bikes', 70, 26, 28, 62, { type: 'counter', cls: 'gear-pile', empty: '🚲🎿🧤' }),
+    D('g-floor', 0, 89, 100, 11),
+  ] },
+  { id: 'g-back', label: '🚪 Bay Doors', wall: 'concrete', parts: [
+    D('g-track', 0, 0, 100, 5),
+    D('bay-door', 3, 10, 45, 79), D('bay-door', 52, 10, 45, 79),
+    Z('gar-door', 6, 52, 88, 36, { type: 'counter', cls: 'gear-pile', empty: '🪜🪵' }),
+    D('g-floor', 0, 89, 100, 11),
+  ] },
+  { id: 'g-right', label: '➡️ Bench & Fridges', wall: 'concrete', parts: [
+    D('g-track', 0, 0, 100, 5),
+    Z('bench-cak3d', 1, 18, 25, 30, { type: 'shelf' }), Z('bench-zayne', 27, 18, 25, 30, { type: 'shelf' }),
+    D('bench-top', 0, 48, 53, 4),
+    Z('bench-under', 1, 53, 51, 35, { type: 'shelf' }),
+    Z('oil-drum', 54, 56, 13, 32, { type: 'drum' }),
+    Z('g-fridge-fz', 69, 36, 14, 13, { type: 'steel', label: '❄️' }), Z('g-fridge', 69, 50, 14, 38, { type: 'steel', label: 'Fridge' }),
+    Z('g-upright', 84, 20, 15, 68, { type: 'steel', label: '❄️ Upright' }),
+    D('g-floor', 0, 89, 100, 11),
+  ] },
+];
+
+// The basement: Home Inventory's numbered racks, four to a wall, like walking the aisle.
+function basementWalls() {
+  const racks = state.zones.filter(z => z.kind === 'rack').sort((a, b) => (a.num ?? 99) - (b.num ?? 99));
+  const walls = [];
+  for (let i = 0; i < racks.length; i += 4) {
+    const four = racks.slice(i, i + 4);
+    const nums = four.map(z => z.num ?? '?');
+    walls.push({ id: `bsmt-w${i / 4}`, label: `🗄️ ${nums.length > 1 ? `${nums[0]}–${nums.at(-1)}` : nums[0]}`, wall: 'block', parts: [
+      ...four.map((z, j) => Z(z.id, 1.5 + j * 24.6, 3, 23, 85, { type: 'rack' })),
+      D('g-floor', 0, 89, 100, 11),
+    ] });
+  }
+  return walls.length ? walls : [{ id: 'bsmt-empty', label: '🗄️ Basement', wall: 'block', parts: [D('g-floor', 0, 89, 100, 11)] }];
+}
+
+// The shed: a wall of stacked storage boxes on each side and at the back.
+function shedWalls() {
+  return state.zones.filter(z => z.kind === 'boxes').map(z => ({ id: z.id, label: `📦 ${z.short || z.name}`, wall: 'plank', parts: [
+    Z(z.id, 2, 3, 96, 85, { type: 'boxwall' }), D('shed-floor', 0, 89, 100, 11),
+  ] }));
+}
+
+const PLACES = { kitchen: { walls: () => KITCHEN, home: 2 }, bathroom: { walls: () => BATHROOM, home: 0 }, basement: { walls: basementWalls, home: 0 }, garage: { walls: () => GARAGE, home: 0 }, shed: { walls: shedWalls, home: 0 } };
+let place = 'kitchen';
+let room = PLACES.kitchen.home; // the wall within the room; kept across re-renders
+const wallsHere = () => PLACES[place].walls();
+export const showRoom = (p, n) => { if (PLACES[p]) { place = p; room = n ?? PLACES[p].home; } };
+// where a place is drawn: the first room and wall that has it (the garage fridges count as the kitchen's)
+export function roomOfZone(zoneId) {
+  for (const p of Object.keys(PLACES)) { const i = PLACES[p].walls().findIndex(r => r.parts.some(x => x.zone === zoneId)); if (i >= 0) return { place: p, wall: i }; }
+  return null;
+}
+// every wall of every room in walking order, for grouping storage in Settings
+export const roomList = () => HOUSE_ROOMS.flatMap(h => {
+  const walls = PLACES[h.id].walls(), home = PLACES[h.id].home;
+  const ordered = h.id === 'kitchen' ? [...walls.slice(home), ...walls.slice(0, home).reverse()] : walls;
+  return ordered.map(r => ({ id: r.id, room: h.id, label: `${h.emoji} ${h.label} · ${r.label.replace(/^\S+\s/, '')}`, zones: [...new Set(r.parts.filter(p => p.zone).map(p => p.zone))] }));
+});
+const drawnZones = () => new Set(Object.values(PLACES).flatMap(p => p.walls().flatMap(r => r.parts.map(x => x.zone).filter(Boolean))));
+const itemsIn = zoneId => { const z = state.zones.find(z => z.id === zoneId); if (!z) return []; const ids = new Set(z.sections.map(s => s.id)); return state.items.filter(i => ids.has(i.sectionId) && visibleItem(i)); };
 
 function badge(zoneId) {
   const its = itemsIn(zoneId);
@@ -125,8 +215,26 @@ function part(p) {
     case 'drawer': doors = `<button class="door drawer oak" ${aria}><span class="knob c"></span></button>`; break;
     case 'bowl': return `<button class="pos pet-bowl" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="kibble"></span>${badge(id)}</button>`;
     case 'bone': return `<button class="pos pet-bone" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="bone">🦴</span>${badge(id)}</button>`;
+    case 'mirror': doors = `<button class="door mirror ${right ? 'right' : ''}" ${aria}><span class="label">${label}</span></button>`; break;
+    case 'towels': { const its = itemsIn(id); return `<button class="pos towel-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="t-ring"></span><span class="t-cloth">${its.slice(0, 3).map(i => i.emoji).join('') || '🧺'}</span>${badge(id)}</button>`; }
+    case 'drum': return `<button class="pos oil-drum" data-zone="${id}" style="${pct(p.box)}" ${aria}><span class="rib"></span><span class="rib"></span><em>${label}</em>${badge(id)}</button>`;
+    // open shelving, no door: each shelf shows what's on it
+    case 'shelf': return `<button class="pos open-shelf" data-zone="${id}" style="${pct(p.box)}" ${aria}><em class="os-name">${label}</em>${z.sections.map(sec => `<span class="os-row">${state.items.filter(i => i.sectionId === sec.id).slice(0, 7).map(i => `<i>${i.emoji}</i>`).join('')}</span>`).join('')}${badge(id)}</button>`;
+    // a basement rack: its number, then each level with the boxes on it (and anything loose beside them)
+    case 'rack': return `<button class="pos rack" data-zone="${id}" style="${pct(p.box)}" ${aria}><em class="rk-num">${esc(String(z.num ?? label))}</em>${z.sections.map(sec => {
+      const bxs = boxesOn(sec.id), loose = state.items.filter(i => i.sectionId === sec.id && !i.boxId);
+      return `<span class="rk-row">${bxs.slice(0, 4).map(b => `<b class="mini-box ${b.locked ? 'locked' : ''}" ${b.color ? `style="--bx:${b.color}"` : ''}>${esc(b.code)}</b>`).join('')}${bxs.length > 4 ? `<small>+${bxs.length - 4}</small>` : ''}${loose.slice(0, 3).map(i => `<i>${i.emoji}</i>`).join('')}</span>`;
+    }).join('')}${badge(id)}</button>`;
+    // the shed: every box in every stack, stacked bottom up; tap a box to open it
+    case 'boxwall': {
+      const high = z.high || 4;
+      return `<div class="pos boxwall" style="${pct(p.box)};--cols:${z.sections.length};--rows:${high}">${z.sections.map((sec, c) => Array.from({ length: high }, (_, k) => {
+        const lv = high - k, b = state.boxes.find(x => x.sectionId === sec.id && x.level === lv), at = `grid-column:${c + 1};grid-row:${k + 1}`;
+        return b ? boxTileHTML(b, at) : `<span class="sbox gap" style="${at}"></span>`;
+      }).join('')).join('')}</div>`;
+    }
     case 'closet': doors = `<button class="door cherry" ${aria}><span class="knob" style="right:8%;top:50%;width:11px;height:11px"></span><span class="label">${label}</span></button>`; break;
-    case 'counter': { const its = itemsIn(id); return `<button class="pos counter-zone" data-zone="${id}" style="${pct(p.box)}" ${aria}>${its.length ? its.slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('') : `<em class="cz-empty">${label}</em>`}</button>`; }
+    case 'counter': { const its = itemsIn(id); return `<button class="pos counter-zone ${p.cls || ''}" data-zone="${id}" style="${pct(p.box)}" ${aria}>${its.length ? its.slice(0, 7).map((i, n) => `<span style="animation-delay:${n * .05}s">${i.emoji}</span>`).join('') : p.empty ? `<em class="cz-ghost">${p.empty}</em>` : `<em class="cz-empty">${label}</em>`}</button>`; }
     default: doors = `<button class="door ${fin} ${right ? 'right' : ''}" ${aria}><span class="pull v" style="${right ? 'left' : 'right'}:7px;${p.box[1] < 40 ? 'bottom' : 'top'}:10px"></span><span class="label">${label}</span></button>`;
   }
   // the closet shows each shelf behind the door, the rest just a peek of what's inside
@@ -134,7 +242,11 @@ function part(p) {
   return `<div class="pos slot ${cold ? 'cold' : ''} ${p.type || 'door'}-slot ${p.cls || ''}" data-zone="${id}" ${p.tour ? `data-tour="${p.tour}"` : ''} style="${pct(p.box)}"><div class="interior">${inside}</div>${doors}${badge(id)}</div>`;
 }
 
-const roomCount = r => r.parts.reduce((a, p) => a + (p.zone && !p.deco ? itemsIn(p.zone).length : 0), 0);
+const zonesOn = walls => [...new Set(walls.flatMap(r => r.parts.map(p => p.zone).filter(Boolean)))];
+const countIn = zoneIds => zoneIds.reduce((a, id) => a + itemsIn(id).length, 0);
+const roomCount = r => countIn(zonesOn([r]));
+// things in the room, plus its boxes that hold something (an empty, unnamed shed box doesn't count)
+const placeCount = p => { const zs = zonesOn(PLACES[p].walls()), n = countIn(zs); const secs = new Set(state.zones.filter(z => zs.includes(z.id)).flatMap(z => z.sections.map(x => x.id))); const bx = (state.boxes || []).filter(b => secs.has(b.sectionId) && (b.name || b.photo || b.inside || state.items.some(i => i.boxId === b.id))).length; return bx ? `${n} · ${bx} 📦` : n; };
 
 function greeting() {
   const h = new Date().getHours();
@@ -149,22 +261,27 @@ export function render(root) {
   const todays = state.events.filter(e => e.date === today());
   const upcoming = state.events.filter(e => e.date > today()).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 3);
   const nextHol = [...holidaysFor(new Date().getFullYear()), ...holidaysFor(new Date().getFullYear() + 1)].find(h => h.iso >= today());
-  const custom = state.zones.filter(z => !DRAWN.has(z.id) && z.id !== 'holiday');
+  const drawn = drawnZones(), custom = state.zones.filter(z => !drawn.has(z.id) && z.id !== 'holiday');
+const ROOMS = wallsHere();
+if (room >= ROOMS.length) room = 0;
+const here = HOUSE_ROOMS.find(h => h.id === place);
   const garage = true; // the room pager is always on
   const cookable = allRecipes().map(r => ({ r, m: recipeMatch(r) })).filter(x => x.m.pct >= .99).length;
 
   root.innerHTML = `
-    <div class="hero-greet"><h2>${greeting()} 👋</h2><p>${items.length ? `${items.length} things in your kitchen · ${cookable} recipes you can make right now` : 'Your kitchen is empty — tap ＋ to stock it.'}</p></div>
+    <div class="hero-greet"><h2>${greeting()} 👋</h2><p>${items.length ? `${items.length} things in your house · ${cookable} recipes you can make right now` : 'Your kitchen is empty — tap ＋ to stock it.'}</p></div>
 
     ${tripBannerHTML()}
     ${(() => { const m = recallMatches(); return m.length ? `<button class="recall-banner" data-recalls>🛡️ <span><b>${m.length} possible recall${m.length > 1 ? 's' : ''}</b> for something in your house. Tap to check the label.</span></button>` : ''; })()}
     <div data-live>${liveStripHTML()}</div>
-    <div class="room-tabs">${ROOMS.map((r, i) => `<button class="room-tab ${room === i ? 'on' : ''}" data-room="${i}" ${r.id === 'garage' ? 'data-tour="garage-tab"' : ''}>${r.label} <span class="n">${roomCount(r)}</span></button>`).join('')}</div>
+    ${(() => { const w = waitingForMe().length, a = myAnswers().length; return w || a ? `<button class="recall-banner ask-banner" data-asks>🙋 <span><b>${w ? `${w} request${w > 1 ? "s" : ""} waiting for your OK` : `${a} answer${a > 1 ? "s" : ""} to what you asked`}</b>${w ? " · tap to say yes or no" : ""}</span></button>` : ""; })()}
+    <div class="house-tabs" data-tour="house">${HOUSE_ROOMS.map(h => `<button class="house-tab ${place === h.id ? 'on' : ''}" data-place="${h.id}"><span class="hi">${h.emoji}</span><b>${h.label}</b><span class="n">${placeCount(h.id)}</span></button>`).join('')}</div>
+    <div class="room-tabs">${ROOMS.map((r, i) => `<button class="room-tab ${room === i ? 'on' : ''}" data-room="${i}" ${r.id === 'g-fridges' ? 'data-tour="garage-tab"' : ''}>${r.label} <span class="n">${roomCount(r)}</span></button>`).join('')}</div>
     <div class="rooms" data-rooms data-tour="scene">
       ${ROOMS.map(r => `<div class="room"><div class="wall wall-${r.wall || 'paint'}">${r.parts.map(part).join('')}</div></div>`).join('')}
     </div>
     <div class="room-dots">${ROOMS.map((r, i) => `<i class="${room === i ? 'on' : ''}"></i>`).join('')}</div>
-    <p class="small muted" style="text-align:center;margin:4px 0 0">Swipe to walk around the kitchen</p>
+    <p class="small muted" style="text-align:center;margin:4px 0 0">Swipe to walk around the ${esc(here.label.toLowerCase())}</p>
 
     <div class="storage-row">
       ${has('holiday') ? `<button class="chest wood-mid" data-zone="holiday" data-tour="holiday"><h4>${esc(zoneName('holiday'))}</h4><p>${itemsIn('holiday').length} items${nextHol ? ` · ${nextHol.emoji} ${esc(nextHol.name)} in ${Math.max(0, Math.round((new Date(nextHol.iso + 'T12:00') - new Date()) / 864e5))}d` : ''}</p><span class="big">🎁</span></button>` : ''}
@@ -212,7 +329,11 @@ export function render(root) {
   root.onclick = e => {
     if (e.target.closest('[data-week]')) return reportSheet();
     if (e.target.closest('[data-recalls]')) return recallSheet();
+    if (e.target.closest('[data-asks]')) return approvalsSheet();
     const tr = e.target.closest('[data-trip]'); if (tr) return tripDetail(tr.dataset.trip, () => actions.go('list'));
+    const pl = e.target.closest('[data-place]');
+    if (pl) { if (pl.dataset.place !== place) { place = pl.dataset.place; room = PLACES[place].home; haptic(); render(root); } return; }
+    const bx = e.target.closest('[data-box]'); if (bx) { haptic(); return boxSheet(bx.dataset.box); }
     const rt = e.target.closest('[data-room]');
     if (rt) { room = Number(rt.dataset.room); haptic(); return rooms.scrollTo({ left: room * rooms.clientWidth, behavior: 'smooth' }); }
     const z = e.target.closest('[data-zone]');
@@ -274,11 +395,14 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
   const hlItem = highlight && state.items.find(i => i.id === highlight);
   let frPage = hlItem ? { l: 0, c: 1, r: 2 }[colOf(hlItem.sectionId)] : 1;
   const secHTML = (s, door = false) => {
-    const its = state.items.filter(i => i.sectionId === s.id);
+    // things inside a box are listed in the box, not loose on the shelf; someone else's private things stay hidden
+    const its = state.items.filter(i => i.sectionId === s.id && !i.boxId && visibleItem(i));
     const title = door ? s.name.replace(/^.*Door · /, '') : s.name;
+    const boxy = z.kind === 'rack' || z.kind === 'boxes', bxs = boxy ? boxesOn(s.id) : [];
     return `
             <div class="shelf-sec ${door ? 'bin' : ''}">
-              <h3>${esc(title)} <span style="opacity:.6;font-weight:600">${its.length}</span>${its.length && !door ? `<button class="btn btn-sm" style="margin-left:auto;height:28px;font-size:11.5px;background:rgba(255,255,255,.18);color:inherit" data-labelsec="${s.id}">🏷️${z.layout === 'french' ? '' : ' Label shelf'}</button>` : ''}</h3>
+              <h3>${esc(title)} <span style="opacity:.6;font-weight:600">${its.length + bxs.length}</span>${its.length && !door && !boxy ? `<button class="btn btn-sm" style="margin-left:auto;height:28px;font-size:11.5px;background:rgba(255,255,255,.18);color:inherit" data-labelsec="${s.id}">🏷️${z.layout === 'french' ? '' : ' Label shelf'}</button>` : ''}${boxy ? `<button class="btn btn-sm" style="margin-left:auto;height:28px;font-size:11.5px;background:rgba(255,255,255,.18);color:inherit" data-pack="${s.id}">📦 Pack</button>` : ''}</h3>
+              ${boxy ? `<div class="shelf-boxes">${bxs.map(b => boxTileHTML(b)).join('')}${z.kind === 'rack' ? `<button class="sbox add" data-newbox="${s.id}" aria-label="Add a box to ${attr(s.name)}">＋<small>Box</small></button>` : ''}</div>` : ''}
               <div class="shelf-items">
                 ${its.map((i, n) => { const st = itemStatus(i); const k = st.key === 'ok' || st.key === 'none' ? (isLow(i) ? 'low' : '') : st.key; return `<button class="jar ${highlight === i.id ? 'hl' : ''}" data-item="${i.id}" style="animation-delay:${n * .04}s;${tint(i.cat)}">${k ? `<span class="st ${k}"></span>` : ''}${imgOrEmoji(i)}<div class="nm">${esc(i.name)}</div><div class="qt">${fmtQty(i.qty)} ${esc(i.unit)}</div></button>`; }).join('')}
                 <button class="add-jar" data-addsec="${s.id}" aria-label="Add to ${attr(s.name)}">＋</button>
@@ -300,6 +424,7 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
         </div>
         <div class="inside-body" style="position:relative">
           ${cold ? '<div class="light-glow"></div>' : ''}
+          ${z.photo ? `<div class="ph-wrap zone-photo"><img data-photo="${attr(z.photo)}" alt=""><span>📷 ${esc(z.short || z.name)}</span></div>` : ""}
           <div class="chips" style="padding:12px 0 4px;margin:0 -2px">
             <button class="chip ${filter === 'all' ? 'on' : ''}" data-sec="all">All <span class="n">${all.length}</span></button>
             ${z.sections.map(s => `<button class="chip ${filter === s.id ? 'on' : ''}" data-sec="${s.id}">${esc(s.name)} <span class="n">${state.items.filter(i => i.sectionId === s.id).length}</span></button>`).join('')}
@@ -308,6 +433,7 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
           ${!all.length ? `<div class="empty" style="color:inherit;opacity:.8"><span class="big">${cold ? '🧊' : '🕸️'}</span>Nothing in here yet.</div>` : ''}
         </div>
       </div>`;
+    fillPhotos(ov);
     const pager = ov.querySelector('[data-frpager]');
     if (pager) {
       syncPager();
@@ -335,6 +461,9 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
     const fg = e.target.closest('[data-frgo]'); if (fg) { const pg = ov.querySelector('[data-frpager]'); haptic(); return pg.scrollTo({ left: Number(fg.dataset.frgo) * pg.clientWidth, behavior: 'smooth' }); }
     const s = e.target.closest('[data-sec]'); if (s) { filter = s.dataset.sec; haptic(); return draw(); }
     const it = e.target.closest('[data-item]'); if (it) return showItem(it.dataset.item);
+    const bx = e.target.closest('[data-box]'); if (bx) return boxSheet(bx.dataset.box);
+    const nb = e.target.closest('[data-newbox]'); if (nb) { const b = newBox(nb.dataset.newbox); act({ kind: 'box', type: 'create', data: b }).then(ok => ok && boxSheet(b.id)); return; }
+    const pk = e.target.closest('[data-pack]'); if (pk) return packSheet(pk.dataset.pack);
     const ad = e.target.closest('[data-addsec]'); if (ad) return actions.addItem({ sectionId: ad.dataset.addsec });
     if (e.target.closest('[data-add]')) return actions.addItem({ sectionId: filter !== 'all' ? filter : z.sections[0]?.id });
     const ls = e.target.closest('[data-labelsec]'); if (ls) return labelWalk(state.items.filter(i => i.sectionId === ls.dataset.labelsec).map(i => i.id), { title: `Label: ${esc(sectionById(ls.dataset.labelsec)?.name || '')}` });

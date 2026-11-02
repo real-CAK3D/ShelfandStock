@@ -5,7 +5,7 @@ import { $, esc, haptic, confetti } from './dom.js';
 import { actions } from '../router.js';
 
 const SLIDES = [
-  { art: '🏡', orbit: ['🥛', '🥕', '🧀', '🍞', '🥫', '🍎'], title: 'Welcome to Shelf & Stock', body: 'Your whole kitchen in your pocket: the fridge, freezer, every cabinet, the pantry and the holiday closet.' },
+  { art: '🏡', orbit: ['🥛', '🥕', '🧀', '🍞', '🥫', '🍎'], title: 'Welcome to Shelf & Stock', body: 'Your whole house in your pocket: the kitchen, the bathroom, the basement shelves, the garage and the shed, down to the box.' },
   { art: '📅', orbit: ['🦃', '🎄', '🏈', '🥞', '🎂', '🌮'], title: 'Plan meals & gatherings', body: 'Put dinners and holidays on the calendar. Shelf & Stock checks your shelves and builds the shopping list for you.' },
   { art: '👩‍🍳', orbit: ['🍝', '🥗', '🍪', '🍲', '🥧', '🍳'], title: 'Cook with what you have', body: 'Recipes show what you can make right now, rescue food before it expires, and list only what you’re missing.' },
   { art: '🏷️', orbit: ['📷', '📦', '⏰', '✅', '🛒', '📍'], title: 'Real labels, real dates', body: 'Scan barcodes for real product labels and nutrition. Keep each batch’s printed date so “use soon” means something.' },
@@ -58,7 +58,7 @@ const STEPS = [
   { view: 'kitchen', sel: '[data-tour=fridge]', title: 'The fridge', body: 'Top shelf, the sliding fresh box, the small and bottom shelves, two drawers, and the door bins (swipe to them), each tracked separately. The freezer drawer sits below it.' },
   { view: 'kitchen', sel: '[data-tour=cabinets]', title: 'Cabinets & pantry', body: 'Baking and spices, canned goods, snacks, pots and pans. Rename them to match your real kitchen in Settings.' },
   { view: 'kitchen', sel: '[data-tour=holiday]', title: 'Holiday closet', body: 'Roasting pan, cookie cutters, the good platter. Tag them “thanksgiving” or “christmas” and they show up on that holiday with exactly where they are.' },
-  { view: 'kitchen', sel: '[data-tour=garage-tab]', title: 'The pantry & the garage', body: 'Swipe right from the stove to the pantry closet next to the fridge, and once more for the garage’s upright freezer and fridge. Or tap Pantry or Garage up here.' },
+  { view: 'kitchen', sel: '[data-tour=house]', title: 'Every room of the house', body: 'Kitchen, Bathroom, Basement, Garage and Shed each have their own walls to swipe through. In the kitchen, swipe right from the stove for the pantry closet and the garage fridges.' },
   { view: 'kitchen', sel: '[data-act=me]', title: 'That’s you', body: 'Everything you do is signed with your name, so the house sees things like “Andrew requested coffee”. Tap your picture to switch person or change your PIN.' },
   { view: 'kitchen', sel: '[data-act=help]', title: 'Help, anytime', body: 'Tap ? and then tap anything on screen. Shelf & Stock explains what it is and how to use it.' },
   { view: 'kitchen', sel: '.fab', title: 'Add groceries', body: 'Search 200+ foods, scan a barcode for the real label and nutrition, or add anything custom. Shelf & Stock suggests the shelf and an expiration date.' },

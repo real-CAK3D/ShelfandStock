@@ -12,8 +12,26 @@ export const ZONE_KINDS = {
   counter: { label: 'Counter', emoji: '🍌' },
   holiday: { label: 'Holiday storage', emoji: '🎁' },
   pet: { label: 'Pet', emoji: '🐾' },
+  closet: { label: 'Closet', emoji: '🚪' },
+  shelf: { label: 'Open shelves', emoji: '🗄️' },
+  rack: { label: 'Storage rack', emoji: '🗄️' },
+  boxes: { label: 'Stacked boxes', emoji: '📦' },
   other: { label: 'Other', emoji: '📦' },
 };
+
+// The rooms of the house, each with its own walls. The kitchen keeps the garage fridges (they're
+// drawn on the garage's right wall too). Zones say which room they belong to so lists can group them.
+export const HOUSE_ROOMS = [
+  { id: 'kitchen', label: 'Kitchen', emoji: '🍳' },
+  { id: 'bathroom', label: 'Bathroom', emoji: '🛁' },
+  { id: 'basement', label: 'Basement', emoji: '📦' },
+  { id: 'garage', label: 'Garage', emoji: '🚗' },
+  { id: 'shed', label: 'Shed', emoji: '🏚️' },
+];
+export const BASEMENT_RACKS = 13;
+// the shed's walls of stacked storage boxes: how many stacks along each wall, four boxes high
+export const SHED_WALLS = [{ id: 'shed-l', name: 'Shed · Left Side', short: 'Left', code: 'L', stacks: 8 }, { id: 'shed-back', name: 'Shed · Back Wall', short: 'Back', code: 'B', stacks: 6 }, { id: 'shed-r', name: 'Shed · Right Side', short: 'Right', code: 'R', stacks: 8 }];
+export const SHED_HIGH = 4;
 
 const shelves = (p, names) => names.map((name, i) => ({ id: `${p}-${i + 1}`, name }));
 
@@ -98,7 +116,64 @@ export const DEFAULT_ZONES = [
     { id: 'ho-thanks', name: 'Thanksgiving Bin' }, { id: 'ho-xmas', name: 'Christmas Bin' },
     { id: 'ho-party', name: 'Party Supplies' }, { id: 'ho-serve', name: 'Serving Ware' },
   ] },
+  ...ROOM_ZONES(),
 ];
+
+// ---- the rest of the house ----
+function ROOM_ZONES() {
+  const five = p => shelves(p, ['Top Shelf', 'Shelf 2', 'Shelf 3', 'Shelf 4', 'Bottom Shelf']);
+  return [
+    // bathroom, the vanity wall: the counter and the ledge under the mirror, a medicine cabinet of three
+    // mirrored doors (a column of shelves behind each), an open space under the sink, two drawers, the towels
+    { id: 'bath-counter', room: 'bathroom', name: 'Bathroom Counter', short: 'Counter', kind: 'counter', slot: 'bath-counter', sections: [
+      { id: 'bc-l', name: 'Left of the Sink' }, { id: 'bc-r', name: 'Right of the Sink' }, { id: 'bc-ledge', name: 'Ledge Under the Mirror' },
+    ] },
+    { id: 'med-l', room: 'bathroom', name: 'Medicine Cabinet · Left', short: 'Left', kind: 'cabinet', slot: 'med-l', sections: five('mcl') },
+    { id: 'med-c', room: 'bathroom', name: 'Medicine Cabinet · Middle', short: 'Middle', kind: 'cabinet', slot: 'med-c', sections: five('mcc') },
+    { id: 'med-r', room: 'bathroom', name: 'Medicine Cabinet · Right', short: 'Right', kind: 'cabinet', slot: 'med-r', sections: five('mcr') },
+    { id: 'bath-sink', room: 'bathroom', name: 'Under the Bathroom Sink', short: 'Under Sink', kind: 'cabinet', slot: 'bath-sink', sections: [{ id: 'bs-1', name: 'Under the Sink' }] },
+    { id: 'bath-dr-1', room: 'bathroom', name: 'Bathroom Drawer · Top', short: '', kind: 'drawer', slot: 'bath-dr-1', sections: [{ id: 'bd1-1', name: 'Bath Towels' }] },
+    { id: 'bath-dr-2', room: 'bathroom', name: 'Bathroom Drawer · Bottom', short: '', kind: 'drawer', slot: 'bath-dr-2', sections: [{ id: 'bd2-1', name: 'Hand Towels & Rags' }] },
+    { id: 'bath-towels', room: 'bathroom', name: 'Towel Ring & Bar', short: 'Towels', kind: 'other', slot: 'bath-towels', sections: [{ id: 'bt-ring', name: 'Towel Ring' }, { id: 'bt-bar', name: 'Towel Bar' }] },
+    // bathroom, the stand-up closet: five shelves and the floor
+    { id: 'bath-closet', room: 'bathroom', name: 'Bathroom Closet', short: 'Closet', kind: 'closet', slot: 'bath-closet', sections: [
+      { id: 'bcl-1', name: 'Top Shelf · Linens' }, { id: 'bcl-2', name: 'Shelf 2 · Medicine' }, { id: 'bcl-3', name: 'Shelf 3 · Toiletries' },
+      { id: 'bcl-4', name: 'Shelf 4 · Cleaning' }, { id: 'bcl-5', name: 'Shelf 5 · Paper Goods' }, { id: 'bcl-6', name: 'Floor' },
+    ] },
+    // garage, left wall (left to right): camping shelves, the hanging two-door cabinet, bikes, skis & winter gear
+    { id: 'gar-camp', room: 'garage', name: 'Camping Shelves', short: 'Camping', kind: 'shelf', slot: 'gar-camp', sections: shelves('gcp', ['Top Shelf', 'Bottom Shelf']) },
+    { id: 'gar-cab', room: 'garage', name: 'Car Care Cabinet', short: 'Car Care', kind: 'cabinet', slot: 'gar-cab', sections: [
+      { id: 'gcl-1', name: 'Left Door · Top Shelf' }, { id: 'gcl-2', name: 'Left Door · Bottom Shelf' },
+      { id: 'gcm-1', name: 'Main · Oil, Fluids & Detailing' },
+      { id: 'gcr-1', name: 'Right Door · Top Shelf' }, { id: 'gcr-2', name: 'Right Door · Bottom Shelf' },
+    ] },
+    { id: 'gar-bikes', room: 'garage', name: 'Bikes, Skis & Winter Gear', short: 'Bikes & Skis', kind: 'other', slot: 'gar-bikes', sections: [
+      { id: 'gbk-1', name: 'Bikes' }, { id: 'gbk-2', name: 'Skis & Snowboards' }, { id: 'gbk-3', name: 'Winter Gear' },
+    ] },
+    // garage, back wall: the closed two-bay door with ladders and saw horses in front
+    { id: 'gar-door', room: 'garage', name: 'By the Bay Doors', short: 'Ladders', kind: 'other', slot: 'gar-door', sections: [{ id: 'gdr-1', name: 'Ladders' }, { id: 'gdr-2', name: 'Saw Horses' }] },
+    // garage, right wall (left to right): CAK3D's and Zayne's tools on the bench, painting & carpentry under it, the oil drum, then the fridges
+    { id: 'bench-cak3d', room: 'garage', name: "CAK3D's Tools", short: 'CAK3D', kind: 'shelf', slot: 'bench-cak3d', sections: [{ id: 'bkc-1', name: 'On the Bench' }, { id: 'bkc-2', name: 'Wall Above' }] },
+    { id: 'bench-zayne', room: 'garage', name: "Zayne's Tools", short: 'Zayne', kind: 'shelf', slot: 'bench-zayne', sections: [{ id: 'bkz-1', name: 'On the Bench' }, { id: 'bkz-2', name: 'Wall Above' }] },
+    { id: 'bench-under', room: 'garage', name: 'Under the Bench', short: 'Paint & Wood', kind: 'shelf', slot: 'bench-under', sections: [{ id: 'bku-1', name: 'Painting' }, { id: 'bku-2', name: 'Carpentry' }] },
+    { id: 'oil-drum', room: 'garage', name: 'Oil Drum', short: 'Drum', kind: 'other', slot: 'oil-drum', sections: [{ id: 'odr-1', name: 'Drum' }] },
+    // basement: the numbered storage racks from Home Inventory, four levels each, holding numbered boxes
+    ...Array.from({ length: BASEMENT_RACKS }, (_, i) => ({ id: `bsmt-${i + 1}`, room: 'basement', num: i + 1, name: `Basement · Section ${i + 1}`, short: `Section ${i + 1}`, kind: 'rack', slot: `bsmt-${i + 1}`,
+      sections: ['Top Shelf', 'Middle Shelf', 'Bottom Shelf', 'Floor'].map((name, j) => ({ id: `b${i + 1}-${['top', 'mid', 'bot', 'floor'][j]}`, name })) })),
+    // shed: storage boxes stacked four high along three walls; each stack is a section
+    ...SHED_WALLS.map(w => ({ id: w.id, room: 'shed', name: w.name, short: w.short, kind: 'boxes', slot: w.id, code: w.code, high: SHED_HIGH,
+      sections: Array.from({ length: w.stacks }, (_, i) => ({ id: `${w.id}-${i + 1}`, name: `Stack ${i + 1}` })) })),
+  ];
+}
+
+// The storage boxes the shed starts with: every spot in every stack (codes like L1–L32, numbered
+// stack by stack from the bottom up), empty and unnamed until someone fills one in.
+export function shedBoxes() {
+  const out = [];
+  for (const w of SHED_WALLS) for (let s = 1; s <= w.stacks; s++) for (let lv = 1; lv <= SHED_HIGH; lv++)
+    out.push({ id: `box-${w.id}-${s}-${lv}`, code: `${w.code}${(s - 1) * SHED_HIGH + lv}`, sectionId: `${w.id}-${s}`, level: lv, name: '', owner: null, locked: false, private: false, photo: null, inside: null, out: null, notes: '', added: null });
+  return out;
+}
 
 // Section ids from the first (generic) layout → where those things live now.
 export const LEGACY_SECTIONS = {
@@ -154,6 +229,35 @@ export function suggestSection(food, zones, hint) {
     if (cat === 'beverages') return pick('pa-5');
     return pick('pa-3');
   }
+  // the bathroom: toothbrushes and soap on the counter, the medicine cabinet's columns, towels in the drawers,
+  // spares in the closet, toilet paper and cleaners under the sink
+  if (cat === 'bath') {
+    if (/toothbrush|toothpaste|hand-soap|hairbrush/.test(id)) return pick('bc-l');
+    if (/lotion/.test(id)) return pick('bc-r');
+    if (/floss|cotton|nail/.test(id)) return pick('mcc-2');
+    if (/face-mask/.test(id)) return pick('mcc-1');
+    if (/shave|razor|clipper/.test(id)) return pick('mcc-4');
+    if (/deodorant|body-spray/.test(id)) return pick('mcl-3');
+    if (/hair-gel/.test(id)) return pick('mcl-4');
+    if (/beard|cologne/.test(id)) return pick('mcr-4');
+    if (/mouthwash/.test(id)) return pick('mcr-5');
+    return pick('bcl-3');
+  }
+  if (cat === 'medicine') return /ointment|bandage/.test(id) ? pick('mcl-1', 'bcl-2') : pick('bcl-2');
+  if (cat === 'linens') return /bath-towel/.test(id) ? pick('bd1-1') : /hand-towel|rag/.test(id) ? pick('bd2-1') : pick('bcl-1');
+  if (cat === 'household' && zone === 'bath') return /tissue/.test(id) ? pick('bc-r') : /toilet-paper/.test(id) ? pick('bs-1', 'bcl-5') : pick('bs-1');
+  // the garage
+  if (cat === 'auto') return /funnel|jumper|gauge/.test(id) ? pick('gcl-1') : /microfiber|wax|tire-shine/.test(id) ? pick('gcr-1') : pick('gcm-1');
+  if (cat === 'tools') {
+    if (/paint/.test(id)) return pick('bku-1');
+    if (/lumber|glue|sandpaper|clamp/.test(id)) return pick('bku-2');
+    if (/ladder/.test(id)) return pick('gdr-1');
+    if (/saw-horse/.test(id)) return pick('gdr-2');
+    return pick('bkc-1');
+  }
+  if (cat === 'outdoor') return /fishing|tackle/.test(id) ? pick('gcp-2') : pick('gcp-1');
+  if (cat === 'sports') return /bike/.test(id) ? pick('gbk-1') : /ski|snowboard/.test(id) ? pick('gbk-2') : pick('gbk-3');
+  if (cat === 'storage') return pick('b1-floor');
   // cabinet foods
   if (cat === 'spices') return pick('ct-spice');
   if (cat === 'baking') return pick('ts-1', 'ts-2');

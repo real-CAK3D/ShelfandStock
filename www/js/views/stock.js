@@ -4,6 +4,7 @@ import { state, itemStatus, isLow, fmtQty, adjustQty, catOf, sectionById, daysBe
 import { CATEGORIES } from '../data/foods.js';
 import { esc, icon, $, $$, segmented, imgOrEmoji, haptic, toast } from '../ui/dom.js';
 import { showItem, crumb, labelWalk } from '../ui/itemSheet.js';
+import { visibleItem } from '../ui/boxes.js';
 
 const ui = { q: '', zone: 'all', cat: 'all', status: 'all', group: 'zone' };
 
@@ -37,6 +38,7 @@ export function render(root, params = {}) {
 function filtered() {
   const q = ui.q.trim().toLowerCase();
   return state.items.filter(i => {
+    if (!visibleItem(i)) return false;
     if (ui.zone !== 'all' && sectionById(i.sectionId)?.zone.id !== ui.zone) return false;
     if (ui.cat !== 'all' && i.cat !== ui.cat) return false;
     const st = itemStatus(i).key;

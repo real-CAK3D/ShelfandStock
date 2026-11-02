@@ -2,7 +2,7 @@
 // and take them off the shopping list. Then offer to read the real dates off the packages.
 
 import { state, update, recordReceipt, money, stockFromReceipt, sectionById, parseQty, kindFrom } from '../store.js';
-import { FOOD_BY_ID, UNITS } from '../data/foods.js';
+import { FOOD_BY_ID, UNITS, GEAR_CATS } from '../data/foods.js';
 import { readText, parseReceipt, matchName, cleanReceiptName, usingPhoneReader } from '../services/ocr.js';
 import { openSheet, esc, attr, toast, haptic, confetti, icon } from './dom.js';
 import { loader } from './loader.js';
@@ -53,7 +53,7 @@ function guessStore(head) {
 const whereFor = it => {
   const ex = it.food && state.items.find(x => x.foodId === it.food.id && x.unit === it.unit);
   if (ex) return `➕ adds to your ${esc(ex.name)}`;
-  return it.food ? `📍 ${esc(it.food.cat === 'kitchenware' ? 'kitchen gear' : 'new item')}` : '📍 new item';
+  return it.food ? `📍 ${esc(GEAR_CATS.has(it.food.cat) ? 'gear' : 'new item')}` : '📍 new item';
 };
 
 function review(r) {
@@ -132,7 +132,7 @@ function putAwaySheet(placed, store, ticked) {
       <div class="row" style="gap:8px;margin-top:12px"><button class="btn btn-ghost grow" data-later>Later</button><button class="btn btn-brass grow" data-walk>🏷️ Date them now</button></div>`,
     onMount: (b, close) => {
       b.querySelector('[data-later]').onclick = () => { close(); toast('Find them anytime under Stock › Undated', { icon: '🏷️' }); };
-      b.querySelector('[data-walk]').onclick = () => { close(); labelWalk(ids.filter(id => FOOD_BY_ID[state.items.find(i => i.id === id)?.foodId]?.cat !== 'kitchenware'), { title: 'Date your groceries' }); };
+      b.querySelector('[data-walk]').onclick = () => { close(); labelWalk(ids.filter(id => !GEAR_CATS.has(FOOD_BY_ID[state.items.find(i => i.id === id)?.foodId]?.cat)), { title: 'Date your groceries' }); };
     },
   });
 }

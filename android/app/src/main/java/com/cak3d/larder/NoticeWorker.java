@@ -83,6 +83,8 @@ final class NoticeWorker {
             if ("trip".equals(kind) && data != null && !data.optString("cutoff").isEmpty())
                 trips.put(new JSONObject().put("id", r.getLong("id")).put("cutoff", data.optString("cutoff")).put("store", data.optString("store", "the store")).put("by", data.optString("by")));
             if (me.equals(r.optString("by_member")) || !kinds.optBoolean(kind, true)) continue;
+            // a notice for one person (an approval request, an answer to one): only their phone shows it
+            if (data != null && !data.optString("to").isEmpty() && !me.equals(data.optString("to"))) continue;
             notify(ctx, (int) (r.getLong("id") % 100000), "Shelf & Stock", r.optString("text"));
         }
 

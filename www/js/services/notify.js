@@ -8,10 +8,11 @@ import { syncInfo, onSyncChange } from './sync.js';
 const URL = 'https://rmshsswlodfvdffnlqdy.supabase.co';
 const KEY = 'sb_publishable__aWybeZVozOcTHsjHq9jGg_HrQXqSpU';
 const PREFS = 'shelfstock.notify';
-export const KINDS = { trip: 'Store runs', atstore: 'Someone is at the store', request: 'New list requests', out: 'Used the last of something' };
+export const KINDS = { trip: 'Store runs', atstore: 'Someone is at the store', request: 'New list requests', out: 'Used the last of something', ask: 'Someone asks for your OK', box: 'Changes to your boxes and things' };
 
 export function notifyPrefs() {
-  try { return { trip: true, atstore: true, request: true, out: true, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }; } catch { return { trip: true, atstore: true, request: true, out: true }; }
+  const all = { trip: true, atstore: true, request: true, out: true, ask: true, box: true };
+  try { return { ...all, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }; } catch { return all; }
 }
 export function setNotifyPref(kind, on) {
   const p = { ...notifyPrefs(), [kind]: on };

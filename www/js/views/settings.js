@@ -1,14 +1,14 @@
 // Settings: a menu of pages (look, cooking, storage by room, people, stores, notifications, sync, report, backup).
 
 import { state, update, replaceState, resetAll, seedSample, uid, migrate } from '../store.js';
-import { ZONE_KINDS, suggestSection } from '../data/layout.js';
+import { ZONE_KINDS, suggestSection, HOUSE_ROOMS } from '../data/layout.js';
 import { FOOD_BY_ID, searchFoods } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confirmBox, openSheet } from '../ui/dom.js';
 import { actions } from '../router.js';
 import { syncInfo, createHousehold, joinHousehold, leaveHousehold, pull, push } from '../services/sync.js';
 import { me, memberById, avatar, addMember, resetPin } from '../services/people.js';
 import { SEASONS } from '../ui/seasons.js';
-import { roomList } from './kitchen.js';
+import { roomList, showRoom } from './kitchen.js';
 import { getPosition, findNearby, saveStore, removeStore, storeEmoji, miles, sharing, setSharing } from '../services/stores.js';
 import { loader } from '../ui/loader.js';
 import { reportSheet } from '../ui/report.js';
@@ -101,10 +101,8 @@ function storagePage() {
       ${r.id === 'other' ? `<button class="btn btn-brass btn-block" data-addzone>${icon('plus')} Add a place</button>` : ''}`;
   }
   return `${head('🗄️ Your storage', 'Settings')}
-    <p class="small muted" style="margin:0 4px 12px">Rename cabinets and shelves to match your real kitchen. Pick a wall, then a cabinet.</p>
-    <div class="card pad" style="margin-bottom:14px;padding-top:4px;padding-bottom:4px">
-      ${rs.map(r => { const zs = r.zones.map(id => state.zones.find(z => z.id === id)).filter(Boolean); return row('room', r.id, esc(r.label), `${plural(zs.length, 'place')} · ${plural(zs.reduce((a, z) => a + itemsIn(z), 0), 'item')}`); }).join('')}
-    </div>
+    <p class="small muted" style="margin:0 4px 12px">Rename cabinets, shelves and boxes to match your real house. Pick a room's wall, then a place.</p>
+    ${[...HOUSE_ROOMS, { id: undefined, emoji: '📦', label: 'Other storage' }].map(h => { const mine = rs.filter(r => r.room === h.id); return mine.length ? `<div class="group-h">${h.emoji} ${esc(h.label)}<span class="line"></span></div><div class="card pad" style="margin-bottom:12px;padding-top:4px;padding-bottom:4px">${mine.map(r => { const zs = r.zones.map(id => state.zones.find(z => z.id === id)).filter(Boolean); return row('room', r.id, esc(r.label.replace(/^S+ [^·]+· /, '')), `${plural(zs.length, 'place')} · ${plural(zs.reduce((a, z) => a + itemsIn(z), 0), 'item')}`); }).join('')}</div>` : ''; }).join('')}
     <button class="btn btn-ghost btn-block" data-addzone>${icon('plus')} Add a place</button>
     <p class="small muted" style="margin:6px 4px 0;text-align:center">A basement shelf, bar cart, chest freezer… New places go under Other storage.</p>`;
 }
@@ -155,7 +153,12 @@ function body(s) {
       <div class="row" style="justify-content:flex-end;margin-bottom:6px"><button class="btn btn-ghost btn-sm" data-person-add>${icon('plus')} Add someone</button></div>
       ${(state.members || []).map(m => `<div class="setting">${avatar(m, 40)}<div class="grow"><b>${esc(m.name)}${m.id === me()?.id ? ' <span class="pill ok">you</span>' : ''}</b><small>${m.mustReset ? 'Hasn’t set a PIN yet (0000)' : 'PIN set'}</small></div><button class="btn btn-ghost btn-sm" data-pin-reset="${m.id}">Reset PIN</button>${m.id !== me()?.id ? `<button class="btn btn-ghost btn-sm" data-person-del="${m.id}" aria-label="Remove ${attr(m.name)}">${icon('trash')}</button>` : ''}</div>`).join('')}
       <p class="small muted" style="margin:8px 0 0">Reset sets a PIN back to 0000; they choose a new one next time they sign in. Change your own icon by tapping your picture at the top.</p>
-    </div>`;
+    </div>
+    ${me() ? (() => { const pr = { onEdit: 'tell', onRemove: 'ask', ...(me().prefs || {}) }; return `<div class="card pad" style="margin-bottom:14px">
+      <b>Your boxes and things</b><p class="small muted" style="margin:2px 0 8px">When someone else changes something that's yours and isn't locked. Locked things always need your OK.</p>
+      <label class="field"><span>Moves or changes</span><select class="input" data-mypref="onEdit">${[['tell', 'Tell me'], ['ask', 'Ask me first'], ['quiet', 'Don’t bother me']].map(([v, l]) => `<option value="${v}" ${pr.onEdit === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="field"><span>Removing it</span><select class="input" data-mypref="onRemove">${[['ask', 'Ask me first'], ['tell', 'Tell me']].map(([v, l]) => `<option value="${v}" ${pr.onRemove === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>`; })() : ''}`;
 
     case 'notify': return `${head(PAGES.notify, 'Settings')}
     <div class="card pad" style="margin-bottom:14px" data-tour="notify">
@@ -190,6 +193,11 @@ function body(s) {
       <h3 style="margin-bottom:10px">Backup</h3>
       <div class="row" style="gap:8px"><button class="btn btn-ghost grow" data-export>${icon('download')} Export</button><label class="btn btn-ghost grow">${icon('upload')} Import<input type="file" accept="application/json,.json" data-import hidden></label></div>
       <p class="small muted">Everything lives on this phone. Export a backup file to move to a new phone or share with your household.</p>
+    </div>
+    <div class="card pad" style="margin-bottom:14px">
+      <h3 style="margin-bottom:6px">📦 Home Inventory</h3>
+      <p class="small muted" style="margin:0 0 10px">Bring the basement shelves, boxes, photos and people over from the Home Inventory app. Running it again adds nothing twice.</p>
+      <button class="btn btn-wood wood-mid btn-block" data-hi>Bring in Home Inventory</button>
     </div>
     <div class="card pad" style="margin-bottom:14px">
       <button class="btn btn-wood wood-mid btn-block" data-tour-again>🧭 Replay the walkthrough</button>
@@ -287,12 +295,14 @@ export function render(root, params = {}) {
       return;
     }
     if (e.target.closest('[data-export]')) return exportData();
+    if (e.target.closest('[data-hi]')) return hiImportSheet();
     if (e.target.closest('[data-tour-again]')) return actions.tour(true);
     if (e.target.closest('[data-sample]')) { if (await confirmBox('Replace your kitchen with the sample kitchen?', { ok: 'Load sample' })) { seedSample(); toast('Sample kitchen loaded', { icon: '🏠' }); actions.go('kitchen'); } return; }
     if (e.target.closest('[data-wipe]')) return startOver();
   };
   root.onchange = e => {
     const t = e.target;
+    if (t.dataset.mypref) { const id = me()?.id; update(s => { const m = s.members.find(x => x.id === id); if (m) m.prefs = { ...(m.prefs || {}), [t.dataset.mypref]: t.value }; }, 'prefs'); toast('Saved', { icon: '✅' }); }
     if (t.dataset.zname) update(s => { s.zones.find(z => z.id === t.dataset.zname).name = t.value.trim() || 'Storage'; }, 'zone');
     if (t.dataset.zkind) update(s => { s.zones.find(z => z.id === t.dataset.zkind).kind = t.value; }, 'zone');
     if (t.dataset.sname) { const [zid, sid] = t.dataset.sname.split('|'); update(s => { s.zones.find(z => z.id === zid).sections.find(x => x.id === sid).name = t.value.trim() || 'Shelf'; }, 'zone'); }
@@ -345,4 +355,29 @@ async function importData(file) {
     if (!await confirmBox(`Restore ${data.items.length} items from this backup? Your current kitchen will be replaced.`, { ok: 'Restore' })) return;
     replaceState(migrate(data)); toast('Backup restored', { icon: '✅' }); actions.go('kitchen');
   } catch (e) { toast('That file isn’t a Shelf & Stock backup', { icon: '⚠️' }); }
+}
+
+// Home Inventory → the basement: a one-time code fetches its shelves, boxes, photos and people
+function hiImportSheet() {
+  openSheet({
+    title: '📦 Bring in Home Inventory',
+    html: `<p class="small muted" style="margin:0 0 10px">Type the import code. Sections become the basement racks, boxes keep their numbers, photos, owners, locks and privacy, and people are matched by name.</p>
+      <div class="row" style="gap:8px"><input class="input grow" placeholder="HI-XXXX-XXXX" autocapitalize="characters" data-hicode><button class="btn btn-brass" data-higo>Bring it in</button></div>
+      <div data-hiout style="margin-top:12px"></div>`,
+    onMount: (b, close) => {
+      const out = b.querySelector('[data-hiout]');
+      b.querySelector('[data-higo]').onclick = async () => {
+        const code = b.querySelector('[data-hicode]').value.trim(); if (!code) return;
+        out.innerHTML = loader('Fetching your shelves…', ['📦', '🗄️', '📷']);
+        try {
+          const { takeImport, applyImport } = await import('../services/hiimport.js');
+          const r = await applyImport(await takeImport(code), t => { const x = out.querySelector('.loader-text'); if (x) x.textContent = t; });
+          out.innerHTML = `<div class="where-banner" style="background:var(--sage-2);color:var(--sage)">✅ <span>Brought in <b>${r.boxes} box${r.boxes === 1 ? '' : 'es'}</b>, ${r.items} thing${r.items === 1 ? '' : 's'} in them and ${r.photos} photo${r.photos === 1 ? '' : 's'}, matched to ${r.people} people. It's all in the Basement.</span></div>
+            <button class="btn btn-brass btn-block" style="margin-top:10px" data-hisee>Go to the basement</button>`;
+          out.querySelector('[data-hisee]').onclick = () => { close(); showRoom('basement'); actions.go('kitchen'); };
+          haptic(25);
+        } catch (e) { out.innerHTML = `<div class="where-banner">⚠️ <span>${esc(e.message || 'That didn’t work')}. Check the code and your connection, then try again.</span></div>`; }
+      };
+    },
+  });
 }

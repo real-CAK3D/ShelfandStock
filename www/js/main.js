@@ -4,6 +4,7 @@ import { state, subscribe, update, addToList, addItem, allRecipes, sectionById, 
 import { searchFoods } from './data/foods.js';
 import { $, $$, esc, icon, openSheet, closeSheet, sheetOpen, haptic, toast, flyTo, imgOrEmoji } from './ui/dom.js';
 import { showItem, addFlow, crumb } from './ui/itemSheet.js';
+import { visibleItem, findBoxes, boxTitle, boxWhere, boxSheet, boxById } from './ui/boxes.js';
 import { register, actions } from './router.js';
 import { welcome, tour } from './ui/tour.js';
 import { toggleHelp, helpOn, exitHelp } from './ui/help.js';
@@ -122,17 +123,20 @@ function globalSearch() {
         const v = q.value.trim().toLowerCase();
         if (!v) { out.innerHTML = `<p class="muted small">Search your shelves, recipes and the food catalog.</p>`; return; }
         // brand, kind, size, store and barcode count too: "snuggle", "blue sparkle", "walmart"
-        const items = state.items.filter(i => `${i.name} ${i.brand} ${i.kind || ''} ${i.size || ''} ${i.store || ''} ${(i.batches || []).map(b => b.store || '').join(' ')} ${i.barcode || ''} ${(i.tags || []).join(' ')}`.toLowerCase().includes(v)).slice(0, 12);
+        const items = state.items.filter(i => visibleItem(i) && `${i.name} ${i.brand} ${i.kind || ''} ${i.size || ''} ${i.store || ''} ${(i.batches || []).map(b => b.store || '').join(' ')} ${i.barcode || ''} ${(i.tags || []).join(' ')}`.toLowerCase().includes(v)).slice(0, 12);
+        const boxes = findBoxes(v).slice(0, 8);
         const rs = allRecipes().filter(r => r.title.toLowerCase().includes(v) || (r.tags || []).includes(v)).slice(0, 6);
         const have = new Set(items.map(i => i.foodId));
         const foods = searchFoods(v, 5).filter(f => !have.has(f.id));
         out.innerHTML = `
-          ${items.length ? `<div class="group-h">In your kitchen<span class="line"></span></div>${items.map(i => { const st = itemStatus(i); return `<button class="irow" style="width:100%;text-align:left;--tint:${catOf(i.cat).color}" data-reveal="${i.id}"><span class="em">${imgOrEmoji(i, '')}</span><span class="t"><b>${esc(i.name)}</b><small>📍 ${esc(crumb(i))}</small></span>${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}</button>`; }).join('')}` : `<div class="where-banner">🤔 <span>No “${esc(q.value)}” in your kitchen.</span></div>`}
+          ${boxes.length ? `<div class="group-h">Boxes<span class="line"></span></div>${boxes.map(bx => `<button class="irow" style="width:100%;text-align:left" data-gbox="${bx.id}"><span class="em">📦</span><span class="t"><b>${esc(boxTitle(bx))}</b><small>📍 ${esc(boxWhere(bx))}</small></span>${icon('next')}</button>`).join('')}` : ''}
+          ${items.length ? `<div class="group-h">In the house<span class="line"></span></div>${items.map(i => { const st = itemStatus(i); return `<button class="irow" style="width:100%;text-align:left;--tint:${catOf(i.cat).color}" data-reveal="${i.id}"><span class="em">${imgOrEmoji(i, '')}</span><span class="t"><b>${esc(i.name)}</b><small>📍 ${esc(crumb(i))}</small></span>${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}</button>`; }).join('')}` : boxes.length ? '' : `<div class="where-banner">🤔 <span>No “${esc(q.value)}” in the house.</span></div>`}
           ${foods.length ? `<div class="group-h">Not in stock<span class="line"></span></div>${foods.map(f => `<div class="irow"><span class="em">${f.emoji}</span><span class="t"><b>${esc(f.name)}</b><small>${esc(catOf(f.cat).name)}</small></span><button class="btn btn-ghost btn-sm" data-tolist="${f.id}">${icon('cart')}</button><button class="btn btn-ghost btn-sm" data-addf="${esc(f.name)}">${icon('plus')}</button></div>`).join('')}` : ''}
           ${rs.length ? `<div class="group-h">Recipes<span class="line"></span></div>${rs.map(r => `<button class="irow" style="width:100%;text-align:left" data-rec="${r.id}"><span class="em">${r.emoji}</span><span class="t"><b>${esc(r.title)}</b><small>${esc(r.type)}</small></span>${icon('next')}</button>`).join('')}` : ''}`;
       };
       q.oninput = draw; draw();
       out.onclick = e => {
+        const gb = e.target.closest('[data-gbox]'); if (gb) { close(); return revealBox(gb.dataset.gbox); }
         const rv = e.target.closest('[data-reveal]'); if (rv) { close(); return revealItem(rv.dataset.reveal); }
         const tl = e.target.closest('[data-tolist]'); if (tl) { addToList({ foodId: tl.dataset.tolist, name: '' }); flyTo(tl, '.tab[data-v=list]', '🛒'); toast('Added to list', { icon: '🛒' }); return; }
         const af = e.target.closest('[data-addf]'); if (af) { close(); return addFlow({ query: af.dataset.addf }); }
@@ -140,6 +144,22 @@ function globalSearch() {
       };
     },
   });
+}
+
+// A box: go to its room and wall, light it up, open it.
+function revealBox(id) {
+  const b = boxById(id), sec = b && sectionById(b.sectionId);
+  if (!sec) return;
+  closeSheetsAll(); closeOverlays();
+  const r = kitchen.roomOfZone(sec.zone.id);
+  if (r) kitchen.showRoom(r.place, r.wall);
+  go('kitchen', {}, { animate: false });
+  setTimeout(() => {
+    const el = document.querySelector(`[data-box="${id}"]`) || document.querySelector(`[data-zone="${sec.zone.id}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el?.classList.add('highlight');
+    setTimeout(() => { el?.classList.remove('highlight'); boxSheet(id); }, 1100);
+  }, 320);
 }
 
 // Close everything, go home, swing the right door open and highlight the item.
@@ -150,7 +170,7 @@ function revealItem(id) {
   closeSheetsAll();
   closeOverlays();
   const r = kitchen.roomOfZone(sec.zone.id);
-  if (r >= 0) kitchen.showRoom(r);
+  if (r) kitchen.showRoom(r.place, r.wall);
   go('kitchen', {}, { animate: false });
   setTimeout(() => {
     const slot = document.querySelector(`[data-zone="${sec.zone.id}"]`);

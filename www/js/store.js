@@ -1,14 +1,14 @@
 // App state: one JSON document persisted to localStorage, with versioned migrations and a
 // tiny pub/sub. Every mutation goes through `update()` so views re-render consistently.
 
-import { DEFAULT_ZONES, suggestSection, LEGACY_SECTIONS, PANTRY_SECTIONS } from './data/layout.js';
-import { FOOD_BY_ID, CAT_BY_ID, matchFood, slug } from './data/foods.js';
+import { DEFAULT_ZONES, suggestSection, LEGACY_SECTIONS, PANTRY_SECTIONS, shedBoxes } from './data/layout.js';
+import { FOOD_BY_ID, CAT_BY_ID, matchFood, slug, GEAR_CATS, SUPPLY_CATS } from './data/foods.js';
 import { BUILTIN_RECIPES } from './data/recipes.js';
 import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 13;
+const VERSION = 14;
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -22,12 +22,20 @@ function blank() {
   return {
     v: VERSION,
     zones: structuredClone(DEFAULT_ZONES),
-    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [], barcodes: [],
+    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [], barcodes: [], boxes: shedBoxes(), approvals: [],
     settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', season: 'auto', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
   };
 }
 
 const MIGRATIONS = {
+  // v13 → v14: the whole house. The bathroom, basement racks, garage walls and the shed's stacked boxes are
+  // added after the kitchen's places (nothing already there is touched), plus storage boxes and approvals.
+  14: s => {
+    for (const d of DEFAULT_ZONES.filter(z => z.room)) if (!s.zones.some(x => x.id === d.id)) s.zones.push(structuredClone(d));
+    s.boxes ||= [];
+    for (const b of shedBoxes()) if (!s.boxes.some(x => x.id === b.id)) s.boxes.push(b);
+    s.approvals ||= [];
+  },
   // v1 → v2: settings.stapleIds + expiryWarnDays were added
   2: s => { s.settings.stapleIds ||= ['salt', 'black-pepper']; s.settings.expiryWarnDays ||= 3; s.history ||= []; },
   // v2 → v3: garage upright freezer + garage top-freezer fridge
@@ -123,6 +131,9 @@ export function sanitize(s) {
   for (const r of s.recipes || []) { r.emoji = cleanEmoji(r.emoji, '🍲'); if (r.image) r.image = cleanImg(r.image); }
   for (const m of s.members || []) { m.emoji = cleanEmoji(m.emoji, '⭐'); m.color = cleanColor(m.color); if (m.photo) m.photo = cleanImg(m.photo); }
   for (const b of s.barcodes || []) { b.emoji = cleanEmoji(b.emoji); if (b.image) b.image = cleanImg(b.image); }
+  // storage boxes: photos are ids into the photo store, nothing else
+  const photoId = p => typeof p === 'string' && /^[a-z0-9_-]{4,64}$/i.test(p) ? p : null;
+  for (const b of s.boxes || []) { b.code = String(b.code ?? '').slice(0, 12); b.color = b.color ? cleanColor(b.color) : null; b.photo = photoId(b.photo); b.inside = photoId(b.inside); }
   return s;
 }
 
@@ -277,7 +288,7 @@ export function makeItem(partial) {
     const sec = sectionById(it.sectionId);
     const kind = sec?.zone.kind === 'freezer' ? 'freezer' : sec?.zone.kind === 'fridge' ? 'fridge' : 'pantry';
     const life = shelfLifeDays(food, kind) || shelfLifeDays(food, food?.zone === 'fridge' ? 'fridge' : 'pantry');
-    if (life && food?.cat !== 'kitchenware' && food?.cat !== 'household') it.expires = addDays(it.added, life);
+    if (life && !GEAR_CATS.has(food?.cat) && !SUPPLY_CATS.has(food?.cat)) it.expires = addDays(it.added, life);
   }
   delete it.noExpiry;
   return it;
@@ -611,7 +622,7 @@ export function suggestions() {
   for (const it of state.items) {
     const key = it.foodId || it.name.toLowerCase(), st = itemStatus(it);
     if (['today', 'soon'].includes(st.key) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: st.days === 0 ? 'Goes bad today — use it or replace it' : `Goes bad in ${st.days}d — use it or replace it`, icon: '⏰', kind: 'perish' });
-    else if (Number(it.qty) === 1 && ['ea', 'dozen', 'gal', 'loaf', 'jar', 'bottle', 'carton', 'bag', 'box', 'can', 'pack'].includes(it.unit) && FOOD_BY_ID[it.foodId] && !['kitchenware', 'household', 'spices'].includes(it.cat) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Only 1 left', icon: '🪫', kind: 'few' });
+    else if (Number(it.qty) === 1 && ['ea', 'dozen', 'gal', 'loaf', 'jar', 'bottle', 'carton', 'bag', 'box', 'can', 'pack'].includes(it.unit) && FOOD_BY_ID[it.foodId] && !GEAR_CATS.has(it.cat) && !['household', 'spices', 'leftovers', 'storage'].includes(it.cat)) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Only 1 left', icon: '🪫', kind: 'few' });
   }
   // Things you buy often but don't have
   const freq = {};

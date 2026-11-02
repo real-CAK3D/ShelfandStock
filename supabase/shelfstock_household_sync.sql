@@ -78,3 +78,21 @@ revoke all on shelfstock.notices from public, anon, authenticated;
 -- public.shelfstock_notify(code, by, kind, text, data) → id   (keeps 14 days)
 -- public.shelfstock_notices(code, after_id) → newer notices, oldest first
 -- (full function bodies applied via the Supabase migration of the same name)
+
+-- ---- migration shelfstock_photos: box photos, kept apart from the household state ----
+create table if not exists shelfstock.photos (
+  household_id uuid not null references shelfstock.households(id) on delete cascade,
+  id text not null, data text not null, created_at timestamptz not null default now(),
+  primary key (household_id, id)
+);
+alter table shelfstock.photos enable row level security;
+revoke all on shelfstock.photos from public, anon, authenticated;
+-- public.shelfstock_photo_put(code, id, data_url) → true   (JPEG/PNG/WebP data URL, ≤ ~600 KB)
+-- public.shelfstock_photo_get(code, ids[]) → (id, data) for up to 40 ids
+-- (full function bodies applied via the Supabase migration of the same name)
+
+-- ---- migration shelfstock_imports: one-time import packages (Home Inventory → the basement) ----
+-- shelfstock.imports (code, payload jsonb, created_at, taken_at); packages expire after 14 days.
+-- public.shelfstock_import_take(code) → payload   (anon)
+-- public.shelfstock_import_photo(code, id, data_url) → true   (service role only; used once by a
+--   since-retired edge function to copy Home Inventory's private photos into the package)

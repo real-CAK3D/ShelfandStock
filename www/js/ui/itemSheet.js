@@ -1,8 +1,8 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
 import { openPrices } from '../services/openprices.js';
-import { state, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty, kindFrom, storeName } from '../store.js';
-import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS } from '../data/foods.js';
+import { state, who, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty, kindFrom, storeName } from '../store.js';
+import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS, GEAR_CATS, SUPPLY_CATS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
 import { lookupBarcode, searchProducts } from '../services/off.js';
@@ -12,7 +12,7 @@ import { readText, parseDates } from '../services/ocr.js';
 import { loader } from './loader.js';
 import { actions } from '../router.js';
 
-export const crumb = it => { const s = sectionById(it.sectionId); return s ? `${s.zone.name} › ${s.name}` : 'Unsorted'; };
+export const crumb = it => { const s = sectionById(it.sectionId); const bx = it.boxId && (state.boxes || []).find(b => b.id === it.boxId); return s ? `${s.zone.name} › ${s.name}${bx ? ` › Box ${bx.code}` : ''}` : 'Unsorted'; };
 
 export function locationSelect(selected, name = 'sectionId') {
   return `<select class="input" name="${name}">${state.zones.map(z => `<optgroup label="${attr(z.name)}">${z.sections.map(s => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${esc(z.name)} › ${esc(s.name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
@@ -32,8 +32,8 @@ export function showItem(id) {
   const it = state.items.find(x => x.id === id);
   if (!it) return;
   const st = itemStatus(it);
-  const gear = it.cat === 'kitchenware'; // pans, dishes, utensils: no dates, nothing gets "used up" or wasted
-  const undated = gear || it.cat === 'household'; // foil, detergent… get used up but never expire
+  const gear = GEAR_CATS.has(it.cat); // pans, tools, tents, towels: no dates, nothing gets "used up" or wasted
+  const undated = gear || SUPPLY_CATS.has(it.cat); // foil, detergent, motor oil… get used up but never expire
   const uses = allRecipes().filter(r => r.ingredients.some(i => (it.foodId && (i.foodId || matchFood(i.name)?.id) === it.foodId))).slice(0, 8);
   const sheet = openSheet({
     hero: `<div class="sheet-hero wood-mid">${imgOrEmoji(it)}<h2>${esc(it.name)}</h2>${it.brand || it.kind || it.size ? `<div class="crumb">${[it.brand, it.kind, it.size].filter(Boolean).map(esc).join(' · ')}</div>` : ''}<div class="crumb">📍 ${esc(crumb(it))}</div></div>`,
@@ -58,8 +58,9 @@ export function showItem(id) {
         ${undated ? '' : `<button class="btn btn-wood wood-mid btn-sm grow" data-a="date">📅 ${it.dated || (it.dateType && it.dateType !== 'Estimated') ? 'Change date' : 'Set printed date'}</button>`}
       </div>
       ${batchList(it)}
+      ${it.boxId || it.owner || it.locked ? `<div class="row wrap" style="gap:6px;margin:0 0 10px">${it.boxId ? `<button class="chip" data-a="box">📦 In Box ${esc(state.boxes?.find(x => x.id === it.boxId)?.code || '?')}</button>` : ''}<span class="pill">${it.owner ? '👤 ' + esc((state.members || []).find(m => m.id === it.owner)?.name || 'Someone') + '’s' : '👪 Whole family'}</span>${!it.owner || it.owner === who() ? `<button class="chip" data-a="lock">${it.locked ? '🔓 Unlock' : '🔒 Lock'}</button>` : it.locked ? '<span class="pill warn">🔒 Locked</span>' : ''}</div>` : ''}
       <div class="kv">
-        ${undated ? `<div><small>Kind</small><b>${gear ? 'Kitchen gear' : 'Household supply'}</b></div>` : `<div><small>${esc(it.dateType && it.dateType !== 'Estimated' ? it.dateType : 'Expires (est.)')}</small><b>${it.expires ? fmtDate(it.expires) : 'No date'}</b></div>`}
+        ${undated ? `<div><small>Kind</small><b>${gear ? 'Gear' : 'Supply'}</b></div>` : `<div><small>${esc(it.dateType && it.dateType !== 'Estimated' ? it.dateType : 'Expires (est.)')}</small><b>${it.expires ? fmtDate(it.expires) : 'No date'}</b></div>`}
         <div><small>Added</small><b>${fmtDate(it.added)}</b></div>
         <div><small>Restock at</small><b>${it.minQty != null && it.minQty !== '' ? `${fmtQty(it.minQty)} ${esc(it.unit)}` : 'Not set'}</b></div>
         <div><small>Category</small><b>${catOf(it.cat).emoji} ${esc(catOf(it.cat).name)}</b></div>
@@ -79,24 +80,40 @@ export function showItem(id) {
       ${uses.length ? `<h3 style="margin:16px 0 8px">Cook with it</h3><div class="stagger">${uses.map(r => { const m = recipeMatch(r); return `<button class="irow" style="width:100%;text-align:left" data-r="${r.id}"><span class="em">${r.emoji}</span><span class="t"><b>${esc(r.title)}</b><small>${m.have}/${m.total} ingredients on hand</small></span>${icon('next')}</button>`; }).join('')}</div>` : ''}
     `,
     onMount: (b, close) => {
-      b.querySelectorAll('[data-q]').forEach(btn => btn.onclick = () => {
+      // someone else's locked thing (or one in their locked box): their OK first. Removing asks to remove it,
+      // anything else asks them to unlock it. Returns true when the change shouldn't happen here and now.
+      const held = async (type = 'update') => {
+        if (!it.owner && !it.boxId && !it.locked) return false;
+        const B = await import('./boxes.js');
+        const d = B.decide({ kind: 'item', type, id: it.id, patch: {} });
+        if (d.mode === 'apply') return false;
+        if (d.mode === 'deny') { toast(d.reason, { icon: '🔒' }); return true; }
+        await B.act(type === 'delete' ? { kind: 'item', type: 'delete', id: it.id } : { kind: 'item', type: 'update', id: it.id, patch: { locked: false } });
+        close(); return true;
+      };
+      b.querySelector('[data-a=box]')?.addEventListener('click', async () => { close(); (await import('./boxes.js')).boxSheet(it.boxId); });
+      b.querySelector('[data-a=lock]')?.addEventListener('click', async () => { const B = await import('./boxes.js'); await B.act({ kind: 'item', type: 'update', id: it.id, patch: { locked: !it.locked, owner: it.owner || who() } }); close(); showItem(it.id); });
+      b.querySelectorAll('[data-q]').forEach(btn => btn.onclick = async () => {
+        if (await held()) return;
         haptic(); adjustQty(it.id, Number(btn.dataset.q) * stepFor(it.unit));
         const cur = state.items.find(x => x.id === it.id); b.querySelector('.stepper input').value = fmtQty(cur?.qty ?? 0);
         if (cur && Number(cur.qty) === 0) toast(`${it.name} is out — add to your list?`, { action: 'Add', onAction: () => addToList({ ...listInfo(it), reason: 'Ran out' }) });
       });
       b.querySelectorAll('[data-r]').forEach(btn => btn.onclick = () => { close(); actions.openRecipe(btn.dataset.r); });
-      if (b.querySelector('[data-a=used]')) b.querySelector('[data-a=used]').onclick = () => {
+      if (b.querySelector('[data-a=used]')) b.querySelector('[data-a=used]').onclick = async () => {
+        if (await held('delete')) return;
         removeItem(it.id, 'used'); close(); haptic(20);
         toast(`Used up ${it.name}`, { icon: '✅', action: 'Add to list', onAction: () => { addToList({ ...listInfo(it), reason: 'Used up' }); toast('On the list', { icon: '🛒' }); } });
       };
       b.querySelector('[data-a=toss]').onclick = async () => {
+        if (await held('delete')) return;
         if (gear) { if (await confirmBox(`Remove ${it.name} from your kitchen?`, { ok: 'Remove', danger: true })) { removeItem(it.id, 'removed'); close(); toast(`Removed ${it.name}`, { icon: '🗑️' }); } return; }
         if (!await confirmBox(`Toss ${it.name}? It'll be logged as wasted so you can spot patterns.`, { ok: 'Toss it', danger: true })) return;
         removeItem(it.id, 'tossed'); close(); toast(`Tossed ${it.name}`, { icon: '🗑️' });
       };
       b.querySelector('[data-a=list]').onclick = e => { const added = addToList({ ...listInfo(it), reason: 'Restock' }); toast(added ? 'Added to shopping list' : 'Already on your list', { icon: '🛒' }); haptic(); };
-      b.querySelector('[data-a=edit]').onclick = () => { close(); editItem(structuredClone(it)); };
-      b.querySelector('[data-a=move]').onclick = () => moveItem(it, close);
+      b.querySelector('[data-a=edit]').onclick = async () => { if (await held()) return; close(); editItem(structuredClone(it)); };
+      b.querySelector('[data-a=move]').onclick = async () => { if (await held()) return; moveItem(it, close); };
       b.querySelector('[data-a=where]').onclick = () => { close(); actions.revealItem(it.id); };
       b.querySelector('[data-a=restock]').onclick = () => { close(); restockSheet(it.id); };
       if (b.querySelector('[data-a=date]')) b.querySelector('[data-a=date]').onclick = () => { close(); dateSheet(it.id, null, { after: () => showItem(it.id) }); };
@@ -251,7 +268,7 @@ function tipFor(it) {
   const L = food.life;
   const fmt = d => span(d, true);
   const where = [L.pantry && `pantry ${fmt(L.pantry)}`, L.fridge && `fridge ${fmt(L.fridge)}`, L.freezer && `freezer ${fmt(L.freezer)}`].filter(Boolean);
-  if (where.length && food.cat !== 'kitchenware' && food.cat !== 'household') lines.push(`Keeps about: ${where.join(' · ')}.`);
+  if (where.length && !GEAR_CATS.has(food.cat) && !SUPPLY_CATS.has(food.cat)) lines.push(`Keeps about: ${where.join(' · ')}.`);
   const kind = storageKind(it);
   if (kind !== 'freezer' && L.freezer && itemStatus(it).key === 'soon') lines.push(`Won't use it in time? Freeze it — buys you ~${fmt(L.freezer)}.`);
   if (!lines.length) return '';
@@ -296,13 +313,13 @@ export function editItem(it, { isNew = false } = {}) {
         <div class="row" style="gap:10px"><label class="field grow"><span>Brand</span><input class="input" name="brand" value="${attr(it.brand || '')}" placeholder="Snuggle"></label><label class="field grow"><span>Kind</span><input class="input" name="kind" value="${attr(it.kind || '')}" placeholder="Blue Sparkle, 2%, low sodium…"></label></div>
         <div class="row" style="gap:10px"><label class="field" style="width:34%"><span>Size</span><input class="input" name="size" value="${attr(it.size || '')}" placeholder="123 fl oz"></label><label class="field grow"><span>Bought at</span><input class="input" name="store" list="ed-stores" value="${attr(it.store || '')}" placeholder="Hannaford"><datalist id="ed-stores">${knownStores().map(n => `<option value="${attr(n)}">`).join('')}</datalist></label><label class="field" style="width:24%"><span>Paid</span><input class="input" name="price" inputmode="decimal" value="${it.price != null ? attr(Number(it.price).toFixed(2)) : ''}" placeholder="$"></label></div>
         <label class="field"><span>Where it lives</span>${locationSelect(it.sectionId)}</label>
-        <div class="row" style="gap:10px;${['kitchenware', 'household'].includes(it.cat) ? 'display:none' : ''}" data-dates>
+        <div class="row" style="gap:10px;${GEAR_CATS.has(it.cat) || SUPPLY_CATS.has(it.cat) ? 'display:none' : ''}" data-dates>
           <label class="field" style="width:42%"><span>Date type</span><select class="input" name="dateType">${DATE_TYPES.map(t => `<option ${t === (it.dateType || 'Estimated') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
           <label class="field grow"><span>${it.batches?.length ? 'Soonest date' : 'Date'}</span><input class="input" type="date" name="expires" value="${attr(it.expires || '')}"></label>
         </div>
         <p class="small muted expiry-hint" style="margin:-6px 0 12px"></p>
         <div class="row" style="gap:10px">
-          <label class="field grow" style="${['kitchenware', 'household'].includes(it.cat) ? 'display:none' : ''}"><span>Opened on</span><input class="input" type="date" name="openedOn" value="${attr(it.openedOn || '')}"></label>
+          <label class="field grow" style="${GEAR_CATS.has(it.cat) || SUPPLY_CATS.has(it.cat) ? 'display:none' : ''}"><span>Opened on</span><input class="input" type="date" name="openedOn" value="${attr(it.openedOn || '')}"></label>
           <label class="field grow"><span>Restock when ≤</span><input class="input" name="minQty" inputmode="decimal" placeholder="e.g. 1" value="${attr(it.minQty ?? '')}"></label>
         </div>
         ${it.batches?.length ? `<p class="small muted" style="margin:-6px 0 12px">This item has ${it.batches.length} batches — quantity changes come out of the oldest first.</p>` : ''}
@@ -319,7 +336,7 @@ export function editItem(it, { isNew = false } = {}) {
       const qty = f.qty;
       let photo = it.image || '';
       // gear and household supplies have no dates; follow the category if it's changed here
-      f.cat.addEventListener('change', () => { const hide = ['kitchenware', 'household'].includes(f.cat.value); b.querySelector('[data-dates]').style.display = hide ? 'none' : ''; f.openedOn.closest('.field').style.display = hide ? 'none' : ''; });
+      f.cat.addEventListener('change', () => { const hide = GEAR_CATS.has(f.cat.value) || SUPPLY_CATS.has(f.cat.value); b.querySelector('[data-dates]').style.display = hide ? 'none' : ''; f.openedOn.closest('.field').style.display = hide ? 'none' : ''; });
       b.querySelector('[data-photo]').onchange = async e => { const file = e.target.files[0]; if (!file) return; photo = (await photoFromFile(file)).thumb; b.querySelector('.photo-prev').innerHTML = `<img src="${photo}" alt="">`; b.querySelector('[data-photolbl]').textContent = 'Change photo'; haptic(); };
       b.querySelector('[data-nophoto]')?.addEventListener('click', e => { photo = ''; b.querySelector('.photo-prev').innerHTML = ''; e.target.remove(); });
       f.querySelectorAll('[data-d]').forEach(btn => btn.onclick = () => { qty.value = Math.max(0, Math.round(((parseQty(qty.value) || 0) + Number(btn.dataset.d) * stepFor(f.unit.value)) * 100) / 100); haptic(); });
