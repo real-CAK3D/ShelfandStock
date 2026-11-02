@@ -289,6 +289,31 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        // A copy of the app's saved state in our own file, written right away (see store.js writeCopies):
+        // the WebView only writes localStorage to disk now and then, so a killed app could lose recent changes.
+        @JavascriptInterface
+        public void saveState(String s) {
+            synchronized (MainActivity.this) {
+                try {
+                    File tmp = new File(getFilesDir(), "state.json.tmp"), f = new File(getFilesDir(), "state.json");
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) { out.write(s.getBytes(java.nio.charset.StandardCharsets.UTF_8)); out.getFD().sync(); }
+                    if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f); }
+                } catch (Exception ignored) { }
+            }
+        }
+
+        @JavascriptInterface
+        public String loadState() {
+            synchronized (MainActivity.this) {
+                try (java.io.FileInputStream in = new java.io.FileInputStream(new File(getFilesDir(), "state.json"))) {
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[65536]; int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    return new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+                } catch (Exception e) { return ""; }
+            }
+        }
+
         // Read text in a photo with Google ML Kit (on the phone, offline). Returns every line with its
         // corner points so the page can rebuild receipt rows (item on the left, price on the right).
         @JavascriptInterface
@@ -406,6 +431,7 @@ public class MainActivity extends Activity {
     private Uri shotUri;
 
     private boolean openCamera() {
+        pruneShots();
         try {
             File dir = new File(getCacheDir(), "shots"); dir.mkdirs();
             File f = new File(dir, "shot-" + System.currentTimeMillis() + ".jpg");
@@ -419,6 +445,26 @@ public class MainActivity extends Activity {
             // no camera app: fall back to the gallery rather than doing nothing
             return openGallery(false);
         }
+    }
+
+    // camera shots and picked copies are only needed while they're being read: clear out day-old ones
+    private void pruneShots() {
+        File[] old = new File(getCacheDir(), "shots").listFiles();
+        if (old != null) for (File f : old) if (System.currentTimeMillis() - f.lastModified() > 24L * 3600 * 1000) f.delete();
+    }
+
+    // a picked photo copied into the app's cache; the original if the copy fails
+    private Uri copyToShots(Uri src) {
+        try {
+            File dir = new File(getCacheDir(), "shots"); dir.mkdirs();
+            File f = new File(dir, "pick-" + System.currentTimeMillis() + "-" + Math.abs(src.hashCode()) + ".jpg");
+            try (java.io.InputStream in = getContentResolver().openInputStream(src); java.io.OutputStream out = new java.io.FileOutputStream(f)) {
+                if (in == null) return src;
+                byte[] buf = new byte[65536]; int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+            return androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+        } catch (Exception e) { return src; }
     }
 
     private boolean openGallery(boolean multiple) {
@@ -459,8 +505,16 @@ public class MainActivity extends Activity {
                     for (int k = 0; k < n; k++) got[k] = data.getClipData().getItemAt(k).getUri();
                 } else if (data.getData() != null) got = new Uri[]{ data.getData() };
             }
-            fileCb.onReceiveValue(got);
-            fileCb = null;
+            if (got == null) { fileCb.onReceiveValue(null); fileCb = null; return; }
+            // The WebView can't read a photo-picker URI a second time (ERR_UPLOAD_FILE_CHANGED), and the app
+            // reads each photo twice (thumbnail, then barcode/text). Copy them into our own files first, like camera shots.
+            final Uri[] picked = got;
+            final ValueCallback<Uri[]> cb = fileCb; fileCb = null;
+            new Thread(() -> {
+                Uri[] copies = new Uri[picked.length];
+                for (int k = 0; k < picked.length; k++) copies[k] = copyToShots(picked[k]);
+                runOnUiThread(() -> cb.onReceiveValue(copies));
+            }).start();
             return;
         }
         super.onActivityResult(req, result, data);

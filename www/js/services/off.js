@@ -100,7 +100,7 @@ function normalize(p, code) {
   const name = (p.product_name || '').trim();
   const guess = matchFood(name) || matchFood((p.categories_tags || []).map(t => t.split(':')[1]).join(' '));
   return {
-    barcode: code, name, brand: (p.brands || '').split(',')[0].trim(), quantity: p.quantity || '',
+    barcode: code, name, brand: (p.brands || '').split(',')[0].trim(), quantity: (p.quantity || '').replace(/\s*(℮|\be)$/u, '').trim(), // "400 g ℮": the EU estimated-weight mark
     image: p.image_front_small_url || p.image_front_url || '',
     nutriscore: (p.nutriscore_grade || '').toLowerCase().replace(/[^a-e]/g, ''), nova: p.nova_group || null,
     allergens: (p.allergens_tags || []).map(t => t.split(':')[1].replace(/-/g, ' ')),

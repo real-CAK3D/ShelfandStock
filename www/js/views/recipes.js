@@ -2,11 +2,11 @@
 
 import { state, update, allRecipes, recipeById, recipeMatch, addToList, fmtQty, scaleQty, itemStatus, saveEvent, uid, today, removeItem, adjustQty, fmtDate, who } from '../store.js';
 import { MEAL_TYPES } from '../data/recipes.js';
-import { matchFood } from '../data/foods.js';
+import { matchFood, FOOD_BY_ID } from '../data/foods.js';
 import { readText, parseRecipeText } from '../services/ocr.js';
 import { esc, attr, icon, $, $$, segmented, openSheet, toast, haptic, confetti, confirmBox, flyTo } from '../ui/dom.js';
 import { crumb } from '../ui/itemSheet.js';
-import { searchMeals, mealsWithIngredient, mealById, randomMeal } from '../services/mealdb.js';
+import { searchMeals, mealsWithIngredient, mealById, randomMeal, mealsFromKitchen } from '../services/mealdb.js';
 import { actions } from '../router.js';
 import { loader } from '../ui/loader.js';
 
@@ -40,6 +40,7 @@ export function render(root, params = {}) {
     const t = e.target.closest('[data-type]'); if (t) { ui.type = t.dataset.type; haptic(); return draw(root); }
     const og = e.target.closest('[data-og]'); if (og) return runOnline(root, og.dataset.og, og.dataset.mode);
     if (e.target.closest('[data-random]')) { online.loading = true; draw(root); try { const m = await randomMeal(); online = { results: m ? [m] : [], q: 'Surprise!', loading: false }; } catch { online = { results: [], loading: false, err: 'offline' }; } return draw(root); }
+    if (e.target.closest('[data-ideas]')) return runIdeas(root);
     if (e.target.closest('[data-new]')) return recipeEditor();
     if (e.target.closest('[data-newphoto]')) return recipeEditor({ fromPhoto: true });
   };
@@ -79,13 +80,22 @@ function draw(root) {
     const mains = ['Chicken', 'Beef', 'Salmon', 'Pork', 'Pasta', 'Rice', 'Potatoes', 'Eggs'];
     body.innerHTML = `
       <div class="search">${icon('globe')}<input class="input" placeholder="Search thousands of recipes…" value="${attr(online.q)}" data-oq></div>
+      <div style="margin:0 16px 10px"><button class="btn btn-brass btn-block" data-ideas>🧑‍🍳 Ideas from what's in your kitchen</button></div>
       <div class="chips"><button class="chip" data-random>🎲 Surprise me</button>${exp.map(i => `<button class="chip" data-og="${attr(matchFood(i.name)?.name.split(' ')[0] || i.name)}" data-mode="ing">⏰ ${esc(i.name)}</button>`).join('')}${mains.map(m => `<button class="chip" data-og="${m}" data-mode="ing">${m}</button>`).join('')}</div>
       <p class="small muted" style="margin:4px 16px 10px">From TheMealDB. Save any recipe to your book and it gets matched against your kitchen like the rest.</p>
       <div data-oresults></div>`;
     const oq = $('[data-oq]', body);
     oq.onkeydown = e => { if (e.key === 'Enter' && oq.value.trim()) runOnline(root, oq.value.trim(), 'name'); };
     const out = $('[data-oresults]', body);
-    if (online.loading) out.innerHTML = loader('Flipping through cookbooks…', ['📖', '🍳', '🥘']);
+    if (online.loading) { out.innerHTML = loader(online.status || 'Flipping through cookbooks…', ['📖', '🍳', '🥘']); return; }
+    if (online.ideas && online.results.length) {
+      // already loaded in full, so each one shows how much of it is in the kitchen, best first
+      const scored = online.results.map(r => ({ r, m: recipeMatch(r) })).sort((a, b) => b.m.pct - a.m.pct || a.m.missing.length - b.m.missing.length);
+      out.innerHTML = `<div class="section-title" style="margin-top:6px"><h2 style="font-size:17px">Ideas from your kitchen</h2><span class="small muted">using ${esc(online.used.join(', '))}</span></div>
+        <p class="small muted" style="margin:0 16px 8px">Ranked by how much you already have. Open one to see what you have, where it is, and add the rest to the list.</p>
+        <div class="rgrid stagger">${scored.map(x => card(x.r, x.m)).join('')}</div>`;
+      return;
+    }
     else if (online.err) out.innerHTML = `<div class="empty"><span class="big">📡</span>Can't reach the recipe library right now. Your built-in recipes still work offline.</div>`;
     else if (online.results.length) out.innerHTML = `<div class="section-title" style="margin-top:6px"><h2 style="font-size:17px">${esc(online.q)}</h2><span class="small muted">${online.results.length} found</span></div><div class="rgrid stagger">${online.results.map(r => card(r, r.partial ? null : recipeMatch(r))).join('')}</div>`;
     else if (online.q) out.innerHTML = `<div class="empty"><span class="big">🤷</span>Nothing for “${esc(online.q)}”. Try one word, like “curry”.</div>`;
@@ -101,6 +111,36 @@ async function runOnline(root, q, mode) {
     res.forEach(r => onlineCache.set(r.id, r));
     online = { results: res, q: online.q, loading: false };
   } catch { online = { results: [], q: online.q, loading: false, err: 'offline' }; }
+  draw(root);
+}
+
+// The main foods in the kitchen to cook around: what's about to go off first, then meat, produce, dairy, grains.
+// Not drinks, snacks, sauces, spices, pet food or pans.
+const IDEA_WEIGHT = { meat: 3, produce: 2, dairy: 1.5, grains: 1.5, frozen: 1, deli: 1, canned: 0.5, bakery: 0.5 };
+function ideaFoods(n = 5) {
+  const best = new Map();
+  for (const i of state.items) {
+    const f = i.foodId && FOOD_BY_ID[i.foodId];
+    if (!f || !IDEA_WEIGHT[f.cat] || i.qty <= 0) continue;
+    const st = itemStatus(i).key;
+    if (st === 'expired') continue;
+    const score = IDEA_WEIGHT[f.cat] + (['soon', 'today'].includes(st) ? 3 : 0);
+    if ((best.get(f.id)?.score || 0) < score) best.set(f.id, { food: f, score });
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, n).map(x => x.food);
+}
+
+async function runIdeas(root) {
+  const foods = ideaFoods();
+  if (!foods.length) return toast('Add some food to the kitchen first', { icon: '🧺' });
+  online = { results: [], q: '', loading: true, status: 'Looking at your kitchen…' };
+  draw(root);
+  try {
+    const res = await mealsFromKitchen(foods, { onStatus: t => { online.status = t; const x = root.querySelector('.loader-text'); if (x) x.textContent = t; } });
+    res.forEach(r => onlineCache.set(r.id, r));
+    online = { results: res, q: '', loading: false, ideas: true, used: foods.map(f => f.name.toLowerCase()) };
+    if (!res.length) online = { results: [], q: 'Ideas from your kitchen', loading: false };
+  } catch { online = { results: [], q: '', loading: false, err: 'offline' }; }
   draw(root);
 }
 
@@ -137,6 +177,11 @@ export async function openRecipe(id, fromEl) {
           </div>
           ${!saved ? `<button class="btn btn-wood wood-mid btn-block" data-save style="margin-bottom:8px">${icon('download')} Save to my recipe book</button>` : ''}
           ${m.missing.length ? `<button class="btn btn-ghost btn-block btn-sm" data-cooked style="margin-bottom:8px">Cook it anyway</button>` : ''}
+          ${(() => { // the answer at a glance: what's here and what to buy
+            const nm = x => esc((x.food?.name || x.ing.name).toLowerCase());
+            const have = m.rows.filter(x => x.have), buy = m.rows.filter(x => !x.have && !x.ing.optional);
+            return `<div class="rc-sum">${have.length ? `<div><b>✅ You have ${have.length}</b> ${have.map(nm).join(', ')}</div>` : ''}${buy.length ? `<div><b>🛒 To buy ${buy.length}</b> ${buy.map(x => nm(x) + (x.short ? ' (more)' : '')).join(', ')}</div>` : '<div><b>🎉 Everything is here.</b></div>'}</div>`;
+          })()}
           <h3 style="margin:14px 0 4px">Ingredients</h3>
           <div>${m.rows.map(x => { const k = x.have ? 'have' : x.short ? 'short' : x.ing.optional ? 'opt' : 'miss'; const where = x.stock[0]; return `<div class="ing ${k}"><span class="mark">${x.have ? '✓' : x.short ? '½' : x.ing.optional ? '–' : '✕'}</span><span class="grow"><b style="font-weight:600">${fmtQty(scale(x.ing.qty))} ${esc(x.ing.unit)}</b> ${esc(x.ing.name)}${x.ing.note ? ` <span class="muted">· ${esc(x.ing.note)}</span>` : ''}${x.ing.optional ? ' <span class="muted">(optional)</span>' : ''}
             <div class="where">${where ? `📍 <button data-where="${where.id}">${esc(crumb(where))}</button> · ${fmtQty(where.qty)} ${esc(where.unit)}${x.short ? ` · <span style="color:var(--honey);font-weight:700">need ${fmtQty(x.short)} ${esc(x.ing.unit)} more</span>` : ''}${x.expiring ? ' · <span style="color:var(--honey);font-weight:700">use soon</span>' : ''}` : x.staple ? 'Pantry staple' : x.have ? '' : 'Not in your kitchen'}</div></span>

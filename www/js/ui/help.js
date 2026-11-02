@@ -93,6 +93,8 @@ const HELP = [
   ['.snap-add', '＋ Another photo', 'Add a photo of the barcode or the date label. The app reads the barcode from any of the photos, the best-by date off the label, and the name off the package if no database knows the barcode.'],
   ['[data-native-scan]', '📷 Scan a barcode', 'Opens Google’s barcode scanner (the same one most scanner apps use). Point it at any barcode; then the app looks it up in the free product databases and your household’s own list.'],
   ['[data-recipephoto]', '📖 Recipe photo', 'Take a picture of a recipe card or cookbook page. It reads the ingredients and steps, shows what you already have, and adds what you’re missing to this list.'],
+  ['[data-ideas]', '🧑‍🍳 Ideas from your kitchen', 'Finds online recipes built around the main food you have (what’s about to go off first) and ranks them by how much of each recipe is already here. Open one to see what you have, where it is, and add the rest to the list.'],
+  ['.rc-sum', '✅ Have / 🛒 To buy', 'The recipe at a glance: what’s already in your kitchen and what you’d need to buy. Each ingredient below shows exactly where it is.'],
   ['[data-newphoto]', '📷 Recipe from a photo', 'Read a recipe card, cookbook page or printout into a new recipe. Check what was read, then save; it can add what you’re missing to the shopping list.'],
   ['[data-receipt]', '🧾 Scan a receipt', 'Snap your receipt after shopping. Every grocery goes into the kitchen (as a new batch on what you have, or a new item on its usual shelf), comes off the list, and its price is saved for that store.'],
   ['[data-unitprice]', '⚖️ Which is cheaper?', 'Type the price and size from two shelf tags and it tells you which is cheaper per ounce, fluid ounce or count, even across units like lb vs oz.'],

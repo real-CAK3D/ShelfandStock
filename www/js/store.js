@@ -145,9 +145,28 @@ export function upgradeShared(r) {
   return sanitize(r);
 }
 
+// The Android app keeps its own copy in a file, written on every save: the WebView only writes localStorage
+// to disk now and then (it rations writes), so a phone that kills the app could lose the last few minutes.
+// Each copy carries when it was saved; the newer one wins.
+const AT_KEY = KEY + '.at';
+function writeCopies(json) {
+  const at = Date.now();
+  try { localStorage.setItem(KEY, json); localStorage.setItem(AT_KEY, String(at)); } catch (e) { console.error('save failed', e); }
+  try { window.LarderNative?.saveState?.(JSON.stringify({ at, json })); } catch { }
+}
+function newestSaved() {
+  let raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY);
+  try {
+    const f = window.LarderNative?.loadState?.();
+    const copy = f && JSON.parse(f);
+    if (copy?.json && copy.at > Number(localStorage.getItem(AT_KEY) || 0)) raw = copy.json;
+  } catch { }
+  return raw;
+}
+
 function load() {
   try {
-    const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY);
+    const raw = newestSaved();
     if (!raw) return blank();
     const s = migrate(JSON.parse(raw));
     return { ...blank(), ...s, settings: { ...blank().settings, ...s.settings } };
@@ -164,9 +183,7 @@ export const subscribe = fn => (subs.add(fn), () => subs.delete(fn));
 let saveTimer;
 function persist() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.error('save failed', e); }
-  }, 120);
+  saveTimer = setTimeout(() => writeCopies(JSON.stringify(state)), 120);
 }
 
 export function update(fn, why = '') {
@@ -187,7 +204,8 @@ export function replaceState(next) {
 export function resetAll() {
   replaceState({ ...blank(), members: state.members || [] });
   clearTimeout(saveTimer);
-  try { localStorage.setItem(KEY, JSON.stringify(state)); localStorage.removeItem(OLD_KEY); } catch (e) { console.error('save failed', e); }
+  writeCopies(JSON.stringify(state));
+  try { localStorage.removeItem(OLD_KEY); } catch { }
 }
 
 // ---------- lookups ----------
@@ -532,10 +550,17 @@ export function kindFrom(name, brand, food) {
 // Groceries straight off a receipt into the kitchen: each line becomes a new batch on the item you
 // already have (same food and unit) or a new item on its usual shelf, with an estimated date, and
 // anything it covers comes off the shopping list. Returns [{ item, batchId }] for dating afterwards.
+// About how much one weighs, for produce sold by the pound but counted one by one at home
+const EACH_LB = { bananas: 0.4, apples: 0.4, oranges: 0.5, lemons: 0.25, limes: 0.15, potatoes: 0.5, 'sweet-potatoes': 0.6, onions: 0.5, tomatoes: 0.3, avocados: 0.4, 'bell-peppers': 0.4, cucumbers: 0.6, zucchini: 0.5 };
+
 export function stockFromReceipt(lines) {
   const placed = [];
-  for (const l of lines) {
+  for (let l of lines) {
     const food = l.foodId ? FOOD_BY_ID[l.foodId] : null;
+    // 2.31 lb of bananas joins the bananas already counted one by one: about 6
+    const lb = l.unit === 'lb' ? l.qty : l.unit === 'kg' ? l.qty * 2.2046 : null;
+    if (food && lb && EACH_LB[food.id] && !matchingItem(food.id, l.unit, l.brand, l.kind) && matchingItem(food.id, 'ea', l.brand, l.kind))
+      l = { ...l, qty: Math.max(1, Math.round(lb / EACH_LB[food.id])), unit: 'ea' };
     const existing = food && matchingItem(food.id, l.unit, l.brand, l.kind);
     if (existing) {
       const life = shelfLifeDays(food, storageKind(existing));

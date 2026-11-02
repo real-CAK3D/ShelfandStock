@@ -102,7 +102,8 @@ export async function readText(file, onStatus, { mode = 'text' } = {}) {
   if (window.LarderNative?.recognizeText) {
     onStatus?.('Reading with the phone’s text reader…');
     const lines = await nativeLines(file);
-    if (lines?.length) return rowsFromBoxes(lines).join('\n');
+    // null means the phone's reader failed; an empty list means it worked and there's no text to find
+    if (lines) return rowsFromBoxes(lines).join('\n');
   }
   const w = await getWorker(onStatus);
   onStatus?.('Reading…');
@@ -215,6 +216,13 @@ export function parseReceipt(text) {
     // "2.38 lb @ 0.52 /lb", "1.25 LB @ $3.99/LB"
     const wt = !q && l.match(/(\d{1,3}[.,]\d{1,3})\s*(lb|lbs|kg|oz)\b[^@]*@[^\d$]*(?:1\s*(?:lb|kg)\s*\/\s*)?\$?\s*(\d{1,4}[.,]\d{2})/i);
     const rate = !q && !wt && l.match(/@[^\d$]*(?:1\s*(lb|kg)\s*\/\s*)?\$?\s*(\d{1,4}[.,]\d{2})\s*(?:\/\s*(lb|lbs|kg))?/i);
+    // all on one line, as store apps' digital receipts print it: "BANANAS 2.31 LB @ 0.59/LB 1.36"
+    const whole = wt && l.match(/^(.*?[A-Za-z]{3}.*?)\s+(\d{1,3}[.,]\d{1,3})\s*(lb|lbs|kg|oz)\b[^@]*@[^\d$]*\$?\s*\d{1,4}[.,]\d{2}\s*(?:\/\s*(?:lb|lbs|kg|oz))?\s+\$?(\d{1,4}[.,]\d{2})\s*[A-Z]{0,2}\s*$/i);
+    if (whole && !NOT_ITEMS.test(whole[1])) {
+      last = pushItem(items, whole[1], num(whole[4]));
+      if (last) { last.qty = num(whole[2]); last.unit = whole[3].toLowerCase().replace('lbs', 'lb'); last.qtySet = true; last.weighed = true; }
+      nameOnly = null; pendingQty = null; continue;
+    }
     if (rate && (rate[1] || rate[3]) && last && !last.qtySet) {
       const per = num(rate[2]);
       if (per > 0) { last.qty = Math.round(last.price / per * 100) / 100; last.unit = (rate[1] || rate[3]).toLowerCase().replace('lbs', 'lb'); last.qtySet = true; last.weighed = true; }
@@ -223,7 +231,9 @@ export function parseReceipt(text) {
     if (q || wt) {
       const n = q ? Number(q[1]) : num(wt[1]), unit = q ? null : wt[2].toLowerCase().replace('lbs', 'lb');
       const each = q ? num(q[3]) / (q[2] ? Number(q[2]) : 1) : num(wt[3]), ext = Math.round(n * each * 100) / 100;
-      const lineTotal = q?.[4] ? num(q[4]) : null;
+      // the line's own total after the rate: "2 @ 1.29 2.58", "2.31 lb @ 0.59 /lb 1.36"
+      const wtTotal = wt && l.match(/@[^\d$]*\$?\s*\d{1,4}[.,]\d{2}\s*(?:\/\s*(?:lb|lbs|kg|oz))?\s+\$?(\d{1,4}[.,]\d{2})\s*[A-Z]{0,2}\s*$/i);
+      const lineTotal = q?.[4] ? num(q[4]) : wtTotal ? num(wtTotal[1]) : null;
       if (last && !last.qtySet && Math.abs(last.price - ext) < 0.03) { last.qty = n; last.qtySet = true; if (unit) { last.unit = unit; last.weighed = true; } }
       else if (nameOnly && lineTotal) { last = pushItem(items, nameOnly, lineTotal || ext); if (last) { last.qty = n; last.qtySet = true; if (unit) { last.unit = unit; last.weighed = true; } } nameOnly = null; }
       else if (last && !last.qtySet && oneDigitOff(last.price, ext)) { last.qty = n; last.qtySet = true; if (unit) { last.unit = unit; last.weighed = true; } last.price = ext; last.sure = 'check'; last.fixed = true; }

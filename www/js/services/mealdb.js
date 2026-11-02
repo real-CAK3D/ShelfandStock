@@ -64,6 +64,29 @@ export async function mealsWithIngredient(ing) {
   return (j.meals || []).slice(0, 12).map(m => ({ id: 'mdb-' + m.idMeal, idMeal: m.idMeal, title: m.strMeal, image: m.strMealThumb, partial: true }));
 }
 
+// TheMealDB's names for a few foods ("Ground Beef" is "Minced Beef" there)
+const MDB_NAME = { 'ground-beef': 'Minced Beef', 'ground-turkey': 'Turkey Mince', 'chicken-breast': 'Chicken Breast', 'chicken-thighs': 'Chicken Thighs', 'bell-peppers': 'Red Pepper', 'green-onions': 'Spring Onions', 'heavy-cream': 'Double Cream' };
+const ingList = async name => (await get('/filter.php?i=' + encodeURIComponent(name.replace(/\s+/g, '_')))).meals || [];
+
+// Online recipes for the food in the kitchen: each food is looked up (by its TheMealDB name, then its
+// last word: "Pork Chops" → "Pork"), recipes that use several of them come first, and the best few are
+// loaded in full so they can be matched against everything in stock.
+export async function mealsFromKitchen(foods, { limit = 14, onStatus } = {}) {
+  const hits = new Map(); // idMeal → how many of these foods it uses
+  for (const f of foods) {
+    onStatus?.(`Looking for recipes with ${f.name.toLowerCase()}…`);
+    let meals = [];
+    try { meals = await ingList(MDB_NAME[f.id] || f.name); if (!meals.length && f.name.includes(' ')) meals = await ingList(f.name.split(' ').pop()); } catch { }
+    for (const m of meals) hits.set(m.idMeal, (hits.get(m.idMeal) || 0) + 1);
+  }
+  if (!hits.size) return [];
+  const best = [...hits].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
+  onStatus?.('Checking each recipe against your kitchen…');
+  const out = [];
+  for (let i = 0; i < best.length; i += 4) out.push(...(await Promise.all(best.slice(i, i + 4).map(id => mealById(id).catch(() => null)))));
+  return out.filter(Boolean);
+}
+
 export async function mealById(idMeal) {
   const j = await get('/lookup.php?i=' + idMeal);
   return j.meals?.[0] ? convert(j.meals[0]) : null;

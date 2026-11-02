@@ -30,7 +30,8 @@ async function getModel(onStatus) {
   onStatus?.('Waking up the food spotter (first time takes a few seconds)…');
   if (!window.tf) await load('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
   if (!window.mobilenet) await load('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js');
-  model = await window.mobilenet.load({ version: 2, alpha: 1.0 });
+  // the library's default (tfhub.dev) now redirects to Kaggle, which blocks apps from loading it; this copy allows it
+  model = await window.mobilenet.load({ version: 2, alpha: 1.0, modelUrl: 'https://storage.googleapis.com/tfjs-models/savedmodel/mobilenet_v2_1.0_224/model.json' });
   return model;
 }
 
