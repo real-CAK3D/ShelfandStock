@@ -11,7 +11,7 @@ const PREFS = 'shelfstock.notify';
 export const KINDS = { trip: 'Store runs', atstore: 'Someone is at the store', request: 'New list requests', out: 'Used the last of something', ask: 'Someone asks for your OK', box: 'Changes to your boxes and things' };
 
 export function notifyPrefs() {
-  const all = { trip: true, atstore: true, request: true, out: true, ask: true, box: true };
+  const all = { trip: true, atstore: true, request: true, out: true, ask: true, box: true, shopAlert: true };
   try { return { ...all, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }; } catch { return all; }
 }
 export function setNotifyPref(kind, on) {

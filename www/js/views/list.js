@@ -1,9 +1,10 @@
 // Shopping list: tick things off in the store, then "put away" to move them into the kitchen
 // and read their real dates off the packages.
 
-import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money, myTripStore, storeName, aisleAt, setAisle, aisleOrder, subsFor, stillGood } from '../store.js';
+import { state, update, subscribe, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money, myTripStore, storeName, aisleAt, setAisle, aisleOrder, subsFor, stillGood } from '../store.js';
 import { attachPicker, subsSheet } from '../ui/foodpicker.js';
-import { currentStore, storeEmoji, storeSearchUrl } from '../services/stores.js';
+import { isShopping, startShopping, stopShopping, isLate } from '../services/shopping.js';
+import { currentStore, storeEmoji, storeSearchUrl, canReadAisle, lookUpAisle } from '../services/stores.js';
 import { CATEGORIES, FOOD_BY_ID } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confetti, flyTo, openSheet, confirmBox } from '../ui/dom.js';
 import { labelWalk, dateSheet } from '../ui/itemSheet.js';
@@ -33,7 +34,7 @@ export function render(root) {
         .map(st => { const items = open.filter(e => storeName(e.store) === st).sort((x, y) => { const a = aisleOrder(x.aisle), b2 = aisleOrder(y.aisle); return a[0] - b2[0] || a[1] - b2[1] || a[2].localeCompare(b2[2]) || aisleSort(x, y); }); return { name: st || 'Anywhere', emoji: st ? storeEmoji(st) : '🛒', items, total: st ? Math.round(items.reduce((a, e) => a + (priceInfo(e.foodId, e.name).byStore.find(p => p.store === st)?.price || 0) * (Number(e.qty) || 1), 0) * 100) / 100 : 0 }; })
     : ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => !ORDER.includes(c))).map(c => ({ name: catOf(c).name, emoji: catOf(c).emoji, items: groups[c], total: 0 }));
   const what = e => [e.brand, e.kind, e.size].filter(Boolean).join(' · ');
-  const row = e => `<div class="lrow ${e.done ? 'done' : ''}" data-id="${e.id}">
+  const row = e => `<div class="lrow ${e.done ? 'done' : ''} ${!e.done && isLate(e) ? 'late' : ''}" data-id="${e.id}">
           <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
           <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}${recalled.has(e.id) ? ' <span class="pill bad" title="Possible recall">⚠️ recall</span>' : ''}</b>${what(e) || e.aisle ? `<small class="l-what">${e.aisle ? `<span class="aisle-pill">${/^\d/.test(e.aisle) ? 'Aisle ' : ''}${esc(e.aisle)}</span> ` : ''}${esc(what(e))}</small>` : ''}${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}
           ${e.store && !e.aisle && !e.done ? `<button class="l-sub" data-setstore="${e.id}">📍 Find the aisle at ${esc(e.store)}</button>` : ''}
@@ -54,6 +55,7 @@ export function render(root) {
     ${tripBannerHTML()}
     <div data-live>${liveStripHTML()}</div>
     <div class="row" style="margin:12px 12px 0;gap:8px">${mineTrip ? '' : `<button class="btn btn-wood wood-mid grow" data-trip-new>🚗 I'm going to the store</button>`}<button class="btn btn-ghost ${mineTrip ? 'grow' : ''}" data-receipt>🧾 Add receipt</button></div>
+    <button class="btn btn-sage btn-block" style="margin:8px 12px 0;width:calc(100% - 24px)" data-shopmode>🛒 ${isShopping() ? 'Back to my shopping list' : 'Start shopping (full screen)'}</button>
     <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-unitprice>⚖️ Which is cheaper?</button><button class="btn btn-ghost btn-sm grow" data-recipephoto>📖 Recipe photo</button><button class="btn btn-ghost btn-sm grow ${recalls.length ? 'recall-btn' : ''}" data-recalls>🛡️ ${recalls.length ? `${recalls.length} recall${recalls.length > 1 ? 's' : ''} to check` : 'Recalls'}</button></div>
     <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new autocomplete="off"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
     ${checks.length ? `<div class="section-title"><h2>Time to check</h2></div><p class="small muted" style="margin:-6px 16px 8px">You asked to be reminded about these. Running low, or still good?</p><div class="stagger">${checks.map(s => `<div class="sugg" style="${tint(FOOD_BY_ID[s.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${s.emoji}</span><span class="t"><b>${esc(s.name)}</b><small>${s.icon} ${esc(s.reason)}</small></span><button class="btn btn-ghost btn-sm" data-stillgood="${s.itemId}">Still good</button><button class="btn btn-sage btn-sm" data-sugg="${sugg.indexOf(s)}">Buy</button></div>`).join('')}</div>` : ''}
@@ -91,11 +93,9 @@ export function render(root) {
   root.onclick = async e => {
     const cb = e.target.closest('[data-check]');
     if (cb) {
-      const id = cb.dataset.check;
-      haptic(15);
-      update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.done = !x.done; x.boughtAt = x.done ? currentStore()?.name || myTripStore() || x.store || '' : ''; } }, 'list-check');
-      return;
+      return toggleCheck(cb.dataset.check);
     }
+    if (e.target.closest('[data-shopmode]')) return shopMode();
     const sb = e.target.closest('[data-subs]'); if (sb) { const x = state.shopping.find(y => y.id === sb.dataset.subs); if (x) subsSheet({ foodId: x.foodId, name: x.name, entryId: x.id }); return; }
     const sgd = e.target.closest('[data-stillgood]'); if (sgd) { stillGood(sgd.dataset.stillgood); haptic(); toast('We’ll check again later', { icon: '👍' }); return; }
     const lg = e.target.closest('[data-listgroup] [data-v]'); if (lg) { haptic(); return update(s => { s.settings.listGroup = lg.dataset.v; }); }
@@ -116,7 +116,10 @@ export function render(root) {
     if (sg) { const s = sugg[Number(sg.dataset.sugg)]; addToList({ ...s, reason: s.reason }); haptic(); (sg.closest('.sugg') || sg).animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 250 }); return; }
     if (e.target.closest('[data-addall]')) { restock.forEach(s => addToList({ ...s })); haptic(20); toast(`${restock.length} added`, { icon: '🛒' }); return; }
     if (e.target.closest('[data-share]')) return shareList();
-    if (e.target.closest('[data-clear]')) { if (await confirmBox('Clear the whole shopping list?', { ok: 'Clear', danger: true })) update(s => { s.shopping = []; }, 'list-clear'); }
+    if (e.target.closest('[data-clear]')) { if (await confirmBox('Clear the whole shopping list?', { ok: 'Clear', danger: true })) update(s => { s.shopping = []; }, 'list-clear'); return; }
+    // anywhere else on a line crosses it off
+    const line = e.target.closest('.lrow');
+    if (line && !e.target.closest('button, a, input, select')) toggleCheck(line.dataset.id);
   };
 
   // swipe right = check, swipe left = remove
@@ -135,6 +138,72 @@ export function render(root) {
   });
 }
 
+function toggleCheck(id) {
+  haptic(15);
+  update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.done = !x.done; x.boughtAt = x.done ? currentStore()?.name || myTripStore() || x.store || '' : ''; } }, 'list-check');
+}
+
+// The whole phone is the list, like paper in your hand: big lines, tap to cross off, new things from home in
+// red at the top, crossed-off ones sink to the bottom. The screen stays on until you leave it.
+function shopMode() {
+  startShopping();
+  let unsub = null;
+  const awake = on => { try { window.LarderNative?.keepAwake?.(on); } catch { } };
+  awake(true);
+  openSheet({
+    cls: 'shop-full',
+    title: '🛒 Shopping',
+    html: `<div class="shop-prog" data-prog></div>
+      <div class="shop-rows" data-rows></div>
+      <div class="pick-host row shop-add"><input class="input grow" data-shopnew placeholder="Add something…" autocomplete="off"><button class="btn btn-brass" data-shopadd aria-label="Add">${icon('plus')}</button></div>
+      <button class="btn btn-sage btn-block" data-shopdone>✅ Done shopping</button>`,
+    onClose: () => { unsub?.(); awake(false); },
+    onMount: (b, close) => {
+      const rows = b.querySelector('[data-rows]');
+      const line = e => {
+        const late = !e.done && isLate(e), subs = subsFor(e.foodId, e.name), what = [e.brand, e.kind, e.size].filter(Boolean).join(' · ');
+        return `<div class="shop-row ${e.done ? 'done' : ''} ${late ? 'late' : ''}" role="button" tabindex="0" data-tap="${e.id}">
+          <span class="shop-box">${e.done ? icon('check') : ''}</span>
+          <span class="shop-t"><b>${esc(e.name)}</b>
+            ${late ? `<small class="shop-new">🔔 Just added${e.by ? ` by ${esc(firstName(e.by))}` : ''}</small>` : ''}
+            ${what ? `<small>${esc(what)}</small>` : ''}
+            ${subs.length && !e.done ? `<small>🔁 or ${esc(subs.map(s => s.name).join(', or '))}</small>` : ''}</span>
+          ${e.aisle && !e.done ? `<span class="aisle-pill">${/^\d/.test(e.aisle) ? 'Aisle ' : ''}${esc(e.aisle)}</span>` : ''}
+          <span class="shop-q">${fmtQty(e.qty)} ${esc(e.unit)}</span>
+          ${e.done ? '' : `<button class="shop-sub" data-subfor="${e.id}" aria-label="Substitutes for ${attr(e.name)}">🔁</button>`}
+        </div>`;
+      };
+      const draw = () => {
+        const all = state.shopping, left = all.filter(e => !e.done);
+        const walk = (x, y) => { const a = aisleOrder(x.aisle), c = aisleOrder(y.aisle); return storeName(x.store).localeCompare(storeName(y.store)) || a[0] - c[0] || a[1] - c[1] || a[2].localeCompare(c[2]); };
+        const late = left.filter(isLate), rest = left.filter(e => !isLate(e)).sort(walk), done = all.filter(e => e.done);
+        b.querySelector('[data-prog]').innerHTML = `<b>${done.length} of ${all.length}</b> crossed off<i style="width:${all.length ? Math.round(done.length / all.length * 100) : 0}%"></i>`;
+        rows.innerHTML = all.length ? [...late, ...rest, ...done].map(line).join('') : '<div class="empty"><span class="big">📝</span>Nothing on the list yet.</div>';
+      };
+      rows.onclick = e => {
+        const sb = e.target.closest('[data-subfor]');
+        if (sb) { const x = state.shopping.find(y => y.id === sb.dataset.subfor); if (x) subsSheet({ foodId: x.foodId, name: x.name, entryId: x.id }); return; }
+        const t = e.target.closest('[data-tap]'); if (t) toggleCheck(t.dataset.tap);
+      };
+      const inp = b.querySelector('[data-shopnew]');
+      const add = picked => {
+        const v = (picked?.name || inp.value).trim(); if (!v) return;
+        addToList({ name: v, ...(picked && !picked.typed ? { foodId: picked.foodId || undefined, emoji: picked.emoji, cat: picked.cat, unit: picked.unit } : {}) });
+        inp.value = ''; pick.hide(); haptic();
+      };
+      const pick = attachPicker(inp, add, { online: false });
+      b.querySelector('[data-shopadd]').onclick = () => add();
+      inp.onkeydown = e => { if (e.key === 'Enter') add(); };
+      b.querySelector('[data-shopdone]').onclick = () => {
+        stopShopping(); close();
+        if (state.shopping.some(x => x.done)) putAway(); else update(() => { }, 'list-check');
+      };
+      draw();
+      unsub = subscribe(draw);
+    },
+  });
+}
+
 // Move a list entry to a store's section (or Anywhere); a new store name can be typed in.
 function storePicker(id) {
   const e = state.shopping.find(x => x.id === id); if (!e) return;
@@ -147,11 +216,19 @@ function storePicker(id) {
       <div class="row" style="gap:8px;margin-top:8px"><input class="input grow" data-newstore placeholder="Another store…"><button class="btn btn-brass" data-addstore>${icon('plus')}</button></div>
       ${e.store ? `<div class="group-h">At ${esc(storeName(e.store))}<span class="line"></span></div>
         <div class="row" style="gap:8px"><label class="field grow" style="margin:0"><span>Aisle</span><input class="input" data-aisle value="${attr(e.aisle || '')}" placeholder="7, A12, Dairy…"></label><button class="btn btn-ghost" data-saveaisle style="align-self:flex-end">Save</button></div>
-        <a class="btn btn-wood wood-mid btn-block" style="margin-top:10px" href="${attr(storeSearchUrl(e.store, e))}" target="_blank" rel="noopener">${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</a>
-        <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s own app or site: the real aisle and today's price. Note the aisle here and it's remembered for next time.</p>` : ''}`,
+        ${canReadAisle() ? `<button class="btn btn-wood wood-mid btn-block" style="margin-top:10px" data-lookaisle>${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</button>
+        <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s site here. Set your store on the site once if it asks. If the page shows an aisle, tap it to save it for next time.</p>` : `<a class="btn btn-wood wood-mid btn-block" style="margin-top:10px" href="${attr(storeSearchUrl(e.store, e))}" target="_blank" rel="noopener">${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</a>
+        <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s own app or site: the real aisle and today's price. Note the aisle here and it's remembered for next time.</p>`}` : ''}`,
     onMount: (b, close) => {
       const set = n => { const st = storeName(n); update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.store = st; x.aisle = aisleAt(st, x.foodId, x.name); } }, 'list-store'); haptic(); close(); };
       b.querySelector('[data-saveaisle]')?.addEventListener('click', () => { setAisle(e.store, e.foodId, e.name, b.querySelector('[data-aisle]').value); update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.aisle = b.querySelector('[data-aisle]').value.trim(); }, 'aisle'); toast('Aisle saved', { icon: '🧭' }); close(); });
+      b.querySelector('[data-lookaisle]')?.addEventListener('click', async () => {
+        const aisle = await lookUpAisle(storeSearchUrl(e.store, e), `${storeName(e.store)}: ${e.name}`);
+        if (!aisle) return;
+        setAisle(e.store, e.foodId, e.name, aisle);
+        update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.aisle = aisle; }, 'aisle');
+        toast(`${e.name}: aisle ${aisle}`, { icon: '🧭' }); close();
+      });
       b.querySelectorAll('[data-pick]').forEach(x => x.onclick = () => set(x.dataset.pick));
       b.querySelector('[data-addstore]').onclick = () => { const n = b.querySelector('[data-newstore]').value.trim(); if (n) set(n); };
     },

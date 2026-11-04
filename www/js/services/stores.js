@@ -31,6 +31,13 @@ export function storeSearchUrl(store, { name = '', brand = '', kind = '', barcod
   return `https://www.google.com/search?q=${encodeURIComponent(`${store || ''} ${words}`.trim())}`;
 }
 
+// In the Android app: the store's site inside the app. Resolves with the aisle the person tapped, or ''.
+export const canReadAisle = () => !!window.LarderNative?.openStorePage;
+export const lookUpAisle = (url, title) => new Promise(res => {
+  window.__storeAisleDone = aisle => { window.__storeAisleDone = null; res(aisle || ''); };
+  window.LarderNative.openStorePage(url, title);
+});
+
 export const storeEmoji = name => (BRAND.find(([re]) => re.test(name)) || [, '🛒'])[1];
 
 export function distanceM(a, b) {

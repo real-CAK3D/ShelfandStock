@@ -49,7 +49,7 @@ function home(s) {
     storage: `${state.zones.length} places · ${state.items.length} items`,
     people: people.length ? esc(people.join(', ')) : 'Nobody yet',
     stores: (state.stores || []).length ? esc(state.stores.map(x => x.name).join(', ')) : 'None saved yet',
-    notify: `${Object.values(notifyPrefs()).filter(Boolean).length} of ${Object.keys(NOTIFY_KINDS).length} on`,
+    notify: `${Object.keys(NOTIFY_KINDS).filter(k => notifyPrefs()[k]).length} of ${Object.keys(NOTIFY_KINDS).length} on`,
     sync: si.code ? `On · ${esc(si.code)}` : 'Off · just this phone',
     report: `${state.history.filter(h => h.type === 'cooked').length} meals cooked · ${state.history.filter(h => h.type === 'tossed').length} tossed`,
     data: 'Export, import, walkthrough, start over',
@@ -164,6 +164,7 @@ function body(s) {
     <div class="card pad" style="margin-bottom:14px" data-tour="notify">
       <p class="small muted" style="margin:0 0 6px">${window.LarderNative?.configureNotices ? 'Shows up on this phone even when the app is closed (checks about every 15 minutes). Needs Household sync.' : 'Notifications when the app is closed work in the Android app. Here, things show up live while the app is open.'}</p>
       ${Object.entries(NOTIFY_KINDS).map(([k, l]) => `<div class="setting" style="padding:10px 4px"><div class="grow"><b style="font-weight:600">${l}</b></div><label class="toggle"><input type="checkbox" data-nk="${k}" ${notifyPrefs()[k] ? 'checked' : ''}><i></i></label></div>`).join('')}
+      <div class="setting" style="padding:10px 4px"><div class="grow"><b style="font-weight:600">🔔 Sound and buzz while I'm shopping</b><br><small class="muted">When someone adds to the list during your trip</small></div><label class="toggle"><input type="checkbox" data-nk="shopAlert" ${notifyPrefs().shopAlert ? 'checked' : ''}><i></i></label></div>
       ${window.LarderNative?.requestNotifications ? '<button class="btn btn-ghost btn-sm" data-nperm style="margin-top:8px">Allow notifications on this phone</button>' : ''}
     </div>`;
 

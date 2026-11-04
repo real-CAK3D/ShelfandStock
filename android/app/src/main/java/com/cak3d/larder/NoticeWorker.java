@@ -31,7 +31,7 @@ import java.util.TimeZone;
 // and refreshes the home-screen widget from the shared kitchen.
 final class NoticeWorker {
     static final String PREFS = "shelfstock";
-    static final String CHANNEL = "household";
+    static final String CHANNEL = "household", CHANNEL_LOUD = "shopping-adds";
     private static final int JOB_ID = 4242;
 
     static SharedPreferences prefs(Context c) { return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
@@ -62,7 +62,21 @@ final class NoticeWorker {
         return bo.toString("UTF-8");
     }
 
-    static void run(Context ctx) throws Exception {
+    static synchronized void run(Context ctx) throws Exception {
+        SharedPreferences p = prefs(ctx);
+        String code = p.getString("code", "");
+        if (code.isEmpty()) return;
+        checkNotices(ctx);
+
+        // 3) fresh widget from the shared kitchen
+        try {
+            JSONArray pull = new JSONArray(post(p, "shelfstock_pull", new JSONObject().put("p_code", code).toString()));
+            if (pull.length() > 0) p.edit().putString("widget", widgetFrom(pull.getJSONObject(0).getJSONObject("state"))).apply();
+            WidgetProvider.refresh(ctx);
+        } catch (Exception ignored) { }
+    }
+
+    static synchronized void checkNotices(Context ctx) throws Exception {
         SharedPreferences p = prefs(ctx);
         String code = p.getString("code", "");
         if (code.isEmpty()) return;
@@ -85,7 +99,9 @@ final class NoticeWorker {
             if (me.equals(r.optString("by_member")) || !kinds.optBoolean(kind, true)) continue;
             // a notice for one person (an approval request, an answer to one): only their phone shows it
             if (data != null && !data.optString("to").isEmpty() && !me.equals(data.optString("to"))) continue;
-            notify(ctx, (int) (r.getLong("id") % 100000), "Shelf & Stock", r.optString("text"));
+            boolean urgent = "request".equals(kind) && p.getBoolean("shopping", false);
+            if (urgent && MainActivity.inFront) continue; // the open app chimes on its own
+            notify(ctx, (int) (r.getLong("id") % 100000), urgent ? "Added to your list" : "Shelf & Stock", r.optString("text"), urgent && p.getBoolean("shopSound", true));
         }
 
         // 2) "the list closes soon" reminders
@@ -106,13 +122,6 @@ final class NoticeWorker {
             keep.put(t);
         }
         p.edit().putLong("lastId", maxId).putString("trips", keep.toString()).apply();
-
-        // 3) fresh widget from the shared kitchen
-        try {
-            JSONArray pull = new JSONArray(post(p, "shelfstock_pull", new JSONObject().put("p_code", code).toString()));
-            if (pull.length() > 0) p.edit().putString("widget", widgetFrom(pull.getJSONObject(0).getJSONObject("state"))).apply();
-            WidgetProvider.refresh(ctx);
-        } catch (Exception ignored) { }
     }
 
     // Same summary the app sends when it's open: list, what's going bad, next store run.
@@ -135,12 +144,22 @@ final class NoticeWorker {
         return new JSONObject().put("list", list).put("more", Math.max(0, open - list.length())).put("exp", exp).put("trip", "").toString();
     }
 
-    static void notify(Context c, int id, String title, String text) {
+    static void notify(Context c, int id, String title, String text) { notify(c, id, title, text, false); }
+
+    // loud: on the shopper's phone, a sound and a buzz that's hard to miss
+    static void notify(Context c, int id, String title, String text, boolean loud) {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null)
             nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Household", NotificationManager.IMPORTANCE_DEFAULT));
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL_LOUD) == null) {
+            NotificationChannel ch = new NotificationChannel(CHANNEL_LOUD, "Added while you're shopping", NotificationManager.IMPORTANCE_HIGH);
+            ch.enableVibration(true);
+            ch.setVibrationPattern(new long[]{0, 250, 120, 250});
+            nm.createNotificationChannel(ch);
+        }
         PendingIntent pi = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, CHANNEL) : new Notification.Builder(c);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, loud ? CHANNEL_LOUD : CHANNEL) : new Notification.Builder(c);
+        if (loud && Build.VERSION.SDK_INT < 26) b.setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE).setPriority(Notification.PRIORITY_HIGH);
         b.setSmallIcon(R.drawable.ic_stat).setContentTitle(title).setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text)).setAutoCancel(true).setContentIntent(pi);
         try { nm.notify(id, b.build()); } catch (SecurityException ignored) { }

@@ -61,7 +61,11 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private static final String ORIGIN = "https://appassets.androidplatform.net";
     private static final String BG = "#2A180D";
-    private static final int REQ_FILE = 1, REQ_CAM = 2, REQ_LOC = 3, REQ_SHOT = 4, REQ_PICK = 5;
+    private static final int REQ_FILE = 1, REQ_CAM = 2, REQ_LOC = 3, REQ_SHOT = 4, REQ_PICK = 5, REQ_STORE = 6;
+
+    static volatile boolean inFront = false;
+    @Override protected void onResume() { super.onResume(); inFront = true; }
+    @Override protected void onPause() { inFront = false; super.onPause(); }
 
     private WebView web;
     private ValueCallback<Uri[]> fileCb;
@@ -396,6 +400,35 @@ public class MainActivity extends Activity {
             WidgetProvider.refresh(MainActivity.this);
         }
 
+        // Out shopping: listen for list additions in the background and keep the screen on while the list is up.
+        @JavascriptInterface
+        public void startShopping(boolean sound) {
+            NoticeWorker.prefs(MainActivity.this).edit().putBoolean("shopping", true).putBoolean("shopSound", sound).apply();
+            requestNotifications();
+            runOnUiThread(() -> {
+                Intent i = new Intent(MainActivity.this, ShoppingService.class);
+                try { if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i); } catch (Exception ignored) { }
+            });
+        }
+
+        @JavascriptInterface
+        public void stopShopping() {
+            NoticeWorker.prefs(MainActivity.this).edit().putBoolean("shopping", false).apply();
+            runOnUiThread(() -> stopService(new Intent(MainActivity.this, ShoppingService.class)));
+        }
+
+        @JavascriptInterface
+        public void keepAwake(boolean on) {
+            runOnUiThread(() -> { if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); });
+        }
+
+        // A store's site inside the app, to look something up and bring its aisle back.
+        @JavascriptInterface
+        public void openStorePage(final String url, final String title) {
+            if (url == null || !url.startsWith("https://")) return;
+            runOnUiThread(() -> startActivityForResult(new Intent(MainActivity.this, StorePageActivity.class).putExtra(StorePageActivity.EXTRA_URL, url).putExtra(StorePageActivity.EXTRA_TITLE, title), REQ_STORE));
+        }
+
         @JavascriptInterface
         public void share(String text) {
             Intent i = new Intent(Intent.ACTION_SEND);
@@ -486,6 +519,13 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
+        if (req == REQ_STORE) {
+            // the page only ever hands back what its aisle pattern matched: letters and digits
+            String aisle = result == RESULT_OK && data != null ? data.getStringExtra(StorePageActivity.EXTRA_AISLE) : null;
+            String safe = aisle != null && aisle.matches("[A-Z0-9]{1,6}") ? aisle : "";
+            web.evaluateJavascript("window.__storeAisleDone && window.__storeAisleDone('" + safe + "')", null);
+            return;
+        }
         if (req == REQ_FILE && fileCb != null) {
             fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
             fileCb = null;

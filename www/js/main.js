@@ -14,6 +14,7 @@ import { loginScreen } from './ui/login.js';
 import { startSeasons } from './ui/seasons.js';
 import { startEmoji } from './ui/emoji.js';
 import { startNotify, notifyHouse } from './services/notify.js';
+import { startShoppingWatch } from './services/shopping.js';
 import { refreshRecalls, onRecalls } from './services/recalls.js';
 import { startLive, onLive, setDoing, announce, reconnectLive } from './services/live.js';
 import { startStoreWatch, onHere } from './services/stores.js';
@@ -288,6 +289,7 @@ function profileSheet() {
   paintMe();
   startLive();
   startNotify();
+  startShoppingWatch();
   // receipts and screenshots shared into the app (Share → Shelf & Stock from the Walmart or Hannaford app, Gallery, Messages…)
   window.larderShared = async () => {
     const raw = window.LarderNative?.takeShared?.(); if (!raw) return;
