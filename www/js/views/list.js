@@ -11,6 +11,7 @@ import { labelWalk, dateSheet } from '../ui/itemSheet.js';
 import { actions } from '../router.js';
 import { tripBannerHTML, tripSheet, tripDetail, liveStripHTML } from '../ui/house.js';
 import { receiptFlow } from '../ui/receipt.js';
+import { cartFlow, fillCartSheet } from '../ui/cart.js';
 import { me, memberById, firstName, avatar } from '../services/people.js';
 import { recallMatches, recallSheet } from '../services/recalls.js';
 import { unitPriceSheet } from '../ui/unitprice.js';
@@ -37,7 +38,7 @@ export function render(root) {
   const row = e => `<div class="lrow ${e.done ? 'done' : ''} ${!e.done && isLate(e) ? 'late' : ''}" data-id="${e.id}">
           <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
           <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}${recalled.has(e.id) ? ' <span class="pill bad" title="Possible recall">⚠️ recall</span>' : ''}</b>${what(e) || e.aisle ? `<small class="l-what">${e.aisle ? `<span class="aisle-pill">${/^\d/.test(e.aisle) ? 'Aisle ' : ''}${esc(e.aisle)}</span> ` : ''}${esc(what(e))}</small>` : ''}${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}
-          ${e.store && !e.aisle && !e.done ? `<button class="l-sub" data-setstore="${e.id}">📍 Find the aisle at ${esc(e.store)}</button>` : ''}
+          ${!e.aisle && !e.done ? `<button class="l-sub" data-setstore="${e.id}">📍 ${e.store ? `Find the aisle at ${esc(e.store)}` : 'Add an aisle or section'}</button>` : ''}
           ${e.done ? '' : (() => { const subs = subsFor(e.foodId, e.name); return `<button class="l-sub" data-subs="${e.id}">🔁 ${subs.length ? `or ${esc(subs.map(s => s.name).join(', or '))}` : 'If it’s not there…'}</button>`; })()}
           ${byStore ? '' : `<button class="l-store" data-setstore="${e.id}">${e.store ? `${storeEmoji(e.store)} ${esc(e.store)}` : '＋ store'}</button>`}${byStore ? `<button class="l-store" data-setstore="${e.id}" aria-label="Move to another store">⇄</button>` : ''}</span>
           <span class="lq">${fmtQty(e.qty)} ${esc(e.unit)}${(() => { const pi = priceInfo(e.foodId, e.name), here = e.store && pi.byStore.find(p => p.store === e.store), c = pi.cheapest; return here ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(here.price)}${c && c.store !== e.store && c.price < here.price ? ` · ${money(c.price)} ${esc(c.store)}` : ''}</small>` : c ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(c.price)} ${esc(c.store)}</small>` : ''; })()}</span>
@@ -57,6 +58,7 @@ export function render(root) {
     <div class="row" style="margin:12px 12px 0;gap:8px">${mineTrip ? '' : `<button class="btn btn-wood wood-mid grow" data-trip-new>🚗 I'm going to the store</button>`}<button class="btn btn-ghost ${mineTrip ? 'grow' : ''}" data-receipt>🧾 Add receipt</button></div>
     <button class="btn btn-sage btn-block" style="margin:8px 12px 0;width:calc(100% - 24px)" data-shopmode>🛒 ${isShopping() ? 'Back to my shopping list' : 'Start shopping (full screen)'}</button>
     <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-unitprice>⚖️ Which is cheaper?</button><button class="btn btn-ghost btn-sm grow" data-recipephoto>📖 Recipe photo</button><button class="btn btn-ghost btn-sm grow ${recalls.length ? 'recall-btn' : ''}" data-recalls>🛡️ ${recalls.length ? `${recalls.length} recall${recalls.length > 1 ? 's' : ''} to check` : 'Recalls'}</button></div>
+    <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-fromcart>🛒 List from a cart</button><button class="btn btn-ghost btn-sm grow" data-fillcart>📤 Fill a pickup cart</button></div>
     <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new autocomplete="off"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
     ${checks.length ? `<div class="section-title"><h2>Time to check</h2></div><p class="small muted" style="margin:-6px 16px 8px">You asked to be reminded about these. Running low, or still good?</p><div class="stagger">${checks.map(s => `<div class="sugg" style="${tint(FOOD_BY_ID[s.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${s.emoji}</span><span class="t"><b>${esc(s.name)}</b><small>${s.icon} ${esc(s.reason)}</small></span><button class="btn btn-ghost btn-sm" data-stillgood="${s.itemId}">Still good</button><button class="btn btn-sage btn-sm" data-sugg="${sugg.indexOf(s)}">Buy</button></div>`).join('')}</div>` : ''}
     ${sugg.length ? `<div class="chips" style="margin-top:8px">${sugg.filter(x => x.group !== 'check').slice(0, 8).map(x => `<button class="chip" data-sugg="${sugg.indexOf(x)}" title="${attr(x.reason)}">${x.emoji} ${esc(x.name)} <span class="n">${x.icon}</span></button>`).join('')}</div>` : ''}
@@ -106,6 +108,8 @@ export function render(root) {
     if (e.target.closest('[data-receipt]')) return receiptFlow();
     if (e.target.closest('[data-moreperish]')) { morePerish = !morePerish; return render(root); }
     if (e.target.closest('[data-morerestock]')) { moreRestock = !moreRestock; return render(root); }
+    if (e.target.closest('[data-fromcart]')) return cartFlow();
+    if (e.target.closest('[data-fillcart]')) return fillCartSheet();
     if (e.target.closest('[data-unitprice]')) return unitPriceSheet();
     if (e.target.closest('[data-recipephoto]')) return recipeEditor({ fromPhoto: true }); // read a recipe, add what's missing
     if (e.target.closest('[data-recalls]')) return recallSheet();
@@ -204,6 +208,8 @@ function shopMode() {
   });
 }
 
+const SECTIONS = ['Produce', 'Bakery', 'Deli', 'Meat', 'Seafood', 'Dairy', 'Frozen', 'Canned', 'Baking', 'Cereal', 'Snacks', 'Drinks', 'Household', 'Health & Beauty', 'Pet', 'Baby'];
+
 // Move a list entry to a store's section (or Anywhere); a new store name can be typed in.
 function storePicker(id) {
   const e = state.shopping.find(x => x.id === id); if (!e) return;
@@ -214,14 +220,17 @@ function storePicker(id) {
     html: `${names.map(n => { const p = pi.byStore.find(x => x.store === n); return `<button class="irow" style="width:100%;text-align:left" data-pick="${attr(n)}"><span class="em">${storeEmoji(n)}</span><span class="t"><b>${esc(n)}</b>${p ? `<small>${money(p.price)} last time${pi.cheapest?.store === n && pi.byStore.length > 1 ? ' · cheapest' : ''}</small>` : ''}</span>${e.store === n ? icon('check') : ''}</button>`; }).join('')}
       <button class="irow" style="width:100%;text-align:left" data-pick=""><span class="em">🛒</span><span class="t"><b>Anywhere</b></span>${!e.store ? icon('check') : ''}</button>
       <div class="row" style="gap:8px;margin-top:8px"><input class="input grow" data-newstore placeholder="Another store…"><button class="btn btn-brass" data-addstore>${icon('plus')}</button></div>
-      ${e.store ? `<div class="group-h">At ${esc(storeName(e.store))}<span class="line"></span></div>
-        <div class="row" style="gap:8px"><label class="field grow" style="margin:0"><span>Aisle</span><input class="input" data-aisle value="${attr(e.aisle || '')}" placeholder="7, A12, Dairy…"></label><button class="btn btn-ghost" data-saveaisle style="align-self:flex-end">Save</button></div>
-        ${canReadAisle() ? `<button class="btn btn-wood wood-mid btn-block" style="margin-top:10px" data-lookaisle>${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</button>
+      <div class="group-h">${e.store ? `At ${esc(storeName(e.store))}` : 'In the store'}<span class="line"></span></div>
+      <div class="row" style="gap:8px"><label class="field grow" style="margin:0"><span>Aisle or section</span><input class="input" data-aisle value="${attr(e.aisle || '')}" placeholder="7, A12, Dairy…"></label><button class="btn btn-ghost" data-saveaisle style="align-self:flex-end">Save</button></div>
+      <div class="row wrap" style="gap:6px;margin-top:8px">${SECTIONS.map(s => `<button class="chip ${e.aisle === s ? 'on' : ''}" data-section="${attr(s)}">${esc(s)}</button>`).join('')}</div>
+      ${e.store ? `${canReadAisle() ? `<button class="btn btn-wood wood-mid btn-block" style="margin-top:10px" data-lookaisle>${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</button>
         <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s site here. Set your store on the site once if it asks. If the page shows an aisle, tap it to save it for next time.</p>` : `<a class="btn btn-wood wood-mid btn-block" style="margin-top:10px" href="${attr(storeSearchUrl(e.store, e))}" target="_blank" rel="noopener">${storeEmoji(e.store)} Look it up at ${esc(storeName(e.store))}</a>
         <p class="small muted" style="margin:6px 2px 0">Opens ${esc(storeName(e.store))}'s own app or site: the real aisle and today's price. Note the aisle here and it's remembered for next time.</p>`}` : ''}`,
     onMount: (b, close) => {
       const set = n => { const st = storeName(n); update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.store = st; x.aisle = aisleAt(st, x.foodId, x.name); } }, 'list-store'); haptic(); close(); };
-      b.querySelector('[data-saveaisle]')?.addEventListener('click', () => { setAisle(e.store, e.foodId, e.name, b.querySelector('[data-aisle]').value); update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.aisle = b.querySelector('[data-aisle]').value.trim(); }, 'aisle'); toast('Aisle saved', { icon: '🧭' }); close(); });
+      const saveSpot = v => { if (e.store) setAisle(e.store, e.foodId, e.name, v); update(s => { const x = s.shopping.find(y => y.id === id); if (x) x.aisle = v.trim(); }, 'aisle'); toast('Saved', { icon: '🧭' }); close(); };
+      b.querySelector('[data-saveaisle]').onclick = () => saveSpot(b.querySelector('[data-aisle]').value);
+      b.querySelectorAll('[data-section]').forEach(x => x.onclick = () => saveSpot(x.dataset.section));
       b.querySelector('[data-lookaisle]')?.addEventListener('click', async () => {
         const aisle = await lookUpAisle(storeSearchUrl(e.store, e), `${storeName(e.store)}: ${e.name}`);
         if (!aisle) return;

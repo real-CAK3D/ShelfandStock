@@ -9,7 +9,7 @@ import { iso } from './data/holidays.js';
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
 const VERSION = 15;
-export const APP_VERSION = '1.11.0'; // shown in Settings; android/app/build.gradle's versionName matches it
+export const APP_VERSION = '1.12.0'; // shown in Settings; android/app/build.gradle's versionName matches it
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -586,8 +586,8 @@ export function setAisle(store, foodId, name, aisle) {
     for (const e of s.shopping) if (storeName(e.store) === st && ((foodId && e.foodId === foodId) || (!foodId && e.name.toLowerCase() === n))) e.aisle = a;
   }, 'aisle');
 }
-// "A12" < "Aisle 3" < "7" < "12" < no aisle: natural order for walking the store
-export const aisleOrder = a => { if (!a) return [1, 0, '']; const m = String(a).match(/\d+/); return [0, m ? Number(m[0]) : 0, String(a).toLowerCase()]; };
+// "A12" < "Aisle 3" < "7" < "12" < named sections < no aisle: natural order for walking the store
+export const aisleOrder = a => { if (!a) return [1, 0, '']; const m = String(a).match(/\d+/); return [0, m ? Number(m[0]) : 900, String(a).toLowerCase()]; };
 
 // the store run this person is on right now, if any
 export function myTripStore() { const me = who(); return activeTrips().find(t => t.by === me)?.store || ''; }
