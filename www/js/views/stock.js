@@ -1,6 +1,6 @@
 // Everything you have, filterable by place, aisle and freshness.
 
-import { state, itemStatus, isLow, fmtQty, adjustQty, catOf, sectionById, daysBetween, today, tint } from '../store.js';
+import { state, itemStatus, needsBuying, buyLabel, fmtQty, adjustQty, catOf, sectionById, daysBetween, today, tint } from '../store.js';
 import { CATEGORIES } from '../data/foods.js';
 import { esc, icon, $, $$, segmented, imgOrEmoji, haptic, toast } from '../ui/dom.js';
 import { showItem, crumb, labelWalk } from '../ui/itemSheet.js';
@@ -43,7 +43,7 @@ function filtered() {
     if (ui.cat !== 'all' && i.cat !== ui.cat) return false;
     const st = itemStatus(i).key;
     if (ui.status === 'expiring' && !['expired', 'today', 'soon'].includes(st)) return false;
-    if (ui.status === 'low' && !(isLow(i) || Number(i.qty) === 0)) return false;
+    if (ui.status === 'low' && !(needsBuying(i) || Number(i.qty) === 0)) return false;
     if (ui.status === 'undated' && (i.dated || (i.dateType && i.dateType !== 'Estimated'))) return false;
     if (q && !(`${i.name} ${i.brand} ${i.kind || ''} ${i.size || ''} ${i.store || ''} ${(i.batches || []).map(b => b.store || '').join(' ')} ${i.barcode || ''} ${(i.tags || []).join(' ')} ${crumb(i)} ${catOf(i.cat).name}`.toLowerCase().includes(q))) return false;
     return true;
@@ -82,11 +82,11 @@ function draw(root) {
 
 function row(i) {
   const st = itemStatus(i);
-  const low = isLow(i) || Number(i.qty) === 0;
+  const low = needsBuying(i) || Number(i.qty) === 0;
   return `<div class="irow" data-item="${i.id}" role="button" tabindex="0" style="${tint(i.cat)}">
     <span class="em">${imgOrEmoji(i, '')}</span>
     <span class="t"><b>${esc(i.name)}${i.batches?.length ? ` <span class="pill" style="font-size:10px">${i.batches.length} batches</span>` : ''}</b><small>📍 ${esc(crumb(i))}</small>
-      <span class="row" style="gap:4px;margin-top:3px">${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}${low ? `<span class="pill low">${Number(i.qty) === 0 ? 'Out' : 'Low'}</span>` : ''}${i.opened ? '<span class="pill">Opened</span>' : ''}</span></span>
+      <span class="row" style="gap:4px;margin-top:3px">${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}${low ? `<span class="pill low">${buyLabel(i)}</span>` : ''}${i.opened ? '<span class="pill">Opened</span>' : ''}</span></span>
     <span class="mini-step"><button data-step="-1" data-id="${i.id}" aria-label="Less">−</button><span>${fmtQty(i.qty)} <small class="muted">${esc(i.unit)}</small></span><button data-step="1" data-id="${i.id}" aria-label="More">+</button></span>
   </div>`;
 }

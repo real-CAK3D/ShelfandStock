@@ -8,7 +8,8 @@ import { iso } from './data/holidays.js';
 
 const KEY = 'shelfstock.state';
 const OLD_KEY = 'larder.state'; // before the rename to Shelf & Stock
-const VERSION = 14;
+const VERSION = 15;
+export const APP_VERSION = '1.10.0'; // shown in Settings; android/app/build.gradle's versionName matches it
 
 // Who is signed in on this phone (see services/people.js); read directly to avoid an import cycle.
 export const who = () => { try { return localStorage.getItem('shelfstock.session'); } catch { return null; } };
@@ -22,12 +23,13 @@ function blank() {
   return {
     v: VERSION,
     zones: structuredClone(DEFAULT_ZONES),
-    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [], barcodes: [], boxes: shedBoxes(), approvals: [],
+    items: [], shopping: [], events: [], recipes: [], favorites: [], history: [], members: [], trips: [], stores: [], prices: [], barcodes: [], boxes: shedBoxes(), approvals: [], subs: [],
     settings: { onboarded: false, household: 2, tourDone: false, wood: 'walnut', cabinets: 'painted', season: 'auto', stapleIds: ['salt', 'black-pepper', 'vegetable-oil', 'olive-oil'], expiryWarnDays: 3, haptics: true },
   };
 }
 
 const MIGRATIONS = {
+  15: s => { s.subs ||= []; },
   // v13 → v14: the whole house. The bathroom, basement racks, garage walls and the shed's stacked boxes are
   // added after the kitchen's places (nothing already there is touched), plus storage boxes and approvals.
   14: s => {
@@ -131,6 +133,7 @@ export function sanitize(s) {
   for (const r of s.recipes || []) { r.emoji = cleanEmoji(r.emoji, '🍲'); if (r.image) r.image = cleanImg(r.image); }
   for (const m of s.members || []) { m.emoji = cleanEmoji(m.emoji, '⭐'); m.color = cleanColor(m.color); if (m.photo) m.photo = cleanImg(m.photo); }
   for (const b of s.barcodes || []) { b.emoji = cleanEmoji(b.emoji); if (b.image) b.image = cleanImg(b.image); }
+  for (const r of s.subs || []) for (const x of r.subs || []) x.emoji = cleanEmoji(x.emoji, '🛒');
   // storage boxes: photos are ids into the photo store, nothing else
   const photoId = p => typeof p === 'string' && /^[a-z0-9_-]{4,64}$/i.test(p) ? p : null;
   for (const b of s.boxes || []) { b.code = String(b.code ?? '').slice(0, 12); b.color = b.color ? cleanColor(b.color) : null; b.photo = photoId(b.photo); b.inside = photoId(b.inside); }
@@ -266,6 +269,42 @@ export function span(d, long = false) {
 
 export const isLow =it => it.minQty != null && it.minQty !== '' && Number(it.qty) <= Number(it.minQty);
 
+// "Check every 30 days": counted from the last purchase or the last "still good", whichever is newest.
+export function reorderDue(it) {
+  const every = Number(it.reorderDays);
+  if (!every) return false;
+  const from = [it.checkedOn, it.added, ...(it.batches || []).map(b => b.added)].filter(Boolean).sort().at(-1);
+  return !!from && daysBetween(from, today()) >= every;
+}
+export const needsBuying = it => isLow(it) || !!it.buySoon || reorderDue(it);
+export const buyLabel = it => Number(it.qty) === 0 ? 'Out' : it.buySoon ? 'Buy soon' : isLow(it) ? 'Low' : reorderDue(it) ? 'Check it' : '';
+export function setBuySoon(id, on) { update(s => { const it = s.items.find(x => x.id === id); if (it) it.buySoon = !!on; }, 'item-buysoon'); }
+export function stillGood(id) { update(s => { const it = s.items.find(x => x.id === id); if (it) { it.checkedOn = today(); it.buySoon = false; } }, 'item-checked'); }
+
+// ---------- substitutions ----------
+// "If it isn't there, get this instead." Kept per food, so they come back every time it's on the list.
+const subKey = (foodId, name) => foodId || String(name || '').trim().toLowerCase();
+export const subsFor = (foodId, name) => (state.subs || []).find(r => r.id === subKey(foodId, name))?.subs || [];
+export function setSubs(foodId, name, subs) {
+  const id = subKey(foodId, name);
+  update(s => {
+    s.subs ||= [];
+    const rec = s.subs.find(r => r.id === id);
+    if (!subs.length) s.subs = s.subs.filter(r => r.id !== id);
+    else if (rec) rec.subs = subs;
+    else s.subs.push({ id, name, subs });
+  }, 'subs');
+}
+// Got the substitute: the list line becomes what was really bought, checked off and ready to put away.
+export function swapToSub(entryId, sub) {
+  const food = sub.foodId ? FOOD_BY_ID[sub.foodId] : null;
+  update(s => {
+    const e = s.shopping.find(x => x.id === entryId); if (!e) return;
+    e.reasons = [...(e.reasons || []), `Instead of ${e.name}`];
+    Object.assign(e, { name: food?.name || sub.name, foodId: food?.id || null, emoji: food?.emoji || sub.emoji || '🛒', cat: food?.cat || e.cat, unit: food?.unit || e.unit, brand: '', kind: '', size: '', done: true, boughtAt: e.store || '' });
+  }, 'list-check');
+}
+
 // ---------- items ----------
 
 export function makeItem(partial) {
@@ -358,6 +397,7 @@ export function restockItem(id, { qty, expires = null, dateType = 'Best by', sto
     if (price != null) it.price = price;
     if (size) it.size = size;
     it.boughtBy = who() || it.boughtBy || null;
+    it.buySoon = false; it.checkedOn = today();
     batches.push(nb);
     it.batches = batches;
     syncBatches(it);
@@ -481,7 +521,7 @@ export function addToList(entry) {
 export function checkOffToStock(id, { store = '' } = {}) {
   const e = state.shopping.find(x => x.id === id);
   if (!e) return null;
-  const existing = matchingItem(e.foodId, e.unit, e.brand, e.kind);
+  const existing = matchingItem(e.foodId, e.unit, e.brand, e.kind, e.name);
   const where = store || myTripStore() || '';
   const paid = where ? priceInfo(e.foodId, e.name).byStore.find(p => p.store === where)?.price ?? null : null;
   let it;
@@ -505,8 +545,9 @@ export function checkOffToStock(id, { store = '' } = {}) {
 
 // The item a new purchase belongs to: same food and unit, preferring the same brand and kind
 // (so Hood 2% doesn't land on the store-brand whole milk).
-export function matchingItem(foodId, unit, brand = '', kind = '') {
-  if (!foodId) return null;
+export function matchingItem(foodId, unit, brand = '', kind = '', name = '') {
+  // not in the catalog: the same name and unit is the same thing
+  if (!foodId) return name ? state.items.find(it => !it.foodId && it.unit === unit && it.name.toLowerCase() === name.trim().toLowerCase()) || null : null;
   const same = state.items.filter(it => it.foodId === foodId && it.unit === unit);
   const b = (brand || '').toLowerCase(), k = (kind || '').toLowerCase();
   return same.find(it => b && (it.brand || '').toLowerCase() === b && (!k || (it.kind || '').toLowerCase() === k))
@@ -572,13 +613,13 @@ export function stockFromReceipt(lines) {
     const lb = l.unit === 'lb' ? l.qty : l.unit === 'kg' ? l.qty * 2.2046 : null;
     if (food && lb && EACH_LB[food.id] && !matchingItem(food.id, l.unit, l.brand, l.kind) && matchingItem(food.id, 'ea', l.brand, l.kind))
       l = { ...l, qty: Math.max(1, Math.round(lb / EACH_LB[food.id])), unit: 'ea' };
-    const existing = food && matchingItem(food.id, l.unit, l.brand, l.kind);
+    const existing = matchingItem(food?.id, l.unit, l.brand, l.kind, l.name);
     if (existing) {
-      const life = shelfLifeDays(food, storageKind(existing));
+      const life = food ? shelfLifeDays(food, storageKind(existing)) : 0;
       const batchId = restockItem(existing.id, { qty: l.qty, expires: life ? addDays(today(), life) : null, dateType: 'Estimated', store: l.store || '', price: l.price ?? null, size: l.size || '' });
       placed.push({ item: state.items.find(i => i.id === existing.id), batchId });
     } else {
-      const it = makeItem({ name: l.name, foodId: food?.id || null, qty: l.qty, unit: l.unit, cat: food?.cat || l.cat, emoji: food?.emoji || l.emoji, store: l.store || '', price: l.price ?? null, size: l.size || '', kind: l.kind || '', brand: l.brand || '', notes: l.raw ? `On the receipt as “${l.raw}”` : '' });
+      const it = makeItem({ name: l.name, foodId: food?.id || null, sectionId: l.sectionId, qty: l.qty, unit: l.unit, cat: food?.cat || l.cat, emoji: food?.emoji || l.emoji, store: l.store || '', price: l.price ?? null, size: l.size || '', kind: l.kind || '', brand: l.brand || '', notes: l.raw ? `On the receipt as “${l.raw}”` : '' });
       update(s => { s.items.push(it); }, 'item-add');
       placed.push({ item: it, batchId: null });
     }
@@ -604,8 +645,10 @@ export function suggestions() {
 
   for (const it of state.items) {
     const key = it.foodId || it.name.toLowerCase();
-    if (isLow(it)) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: Math.max(1, Number(it.minQty) * 2 - Number(it.qty)), reason: 'Running low', icon: '📉' });
+    if (it.buySoon) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'You marked this to buy soon', icon: '🔜' });
+    else if (isLow(it)) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: Math.max(1, Number(it.minQty) * 2 - Number(it.qty)), reason: 'Running low', icon: '📉' });
     else if (Number(it.qty) === 0) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Out of stock', icon: '🚫' });
+    else if (reorderDue(it)) push(key, { name: it.name, foodId: it.foodId, itemId: it.id, emoji: it.emoji, unit: it.unit, qty: 1, reason: `Time to check: every ${it.reorderDays} days`, icon: '🔁', group: 'check' });
   }
   // Upcoming plan (next 14 days)
   const horizon = addDays(today(), 14);
@@ -621,8 +664,9 @@ export function suggestions() {
   // About to perish or down to the last one: replace it while you're out
   for (const it of state.items) {
     const key = it.foodId || it.name.toLowerCase(), st = itemStatus(it);
-    if (['today', 'soon'].includes(st.key) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: st.days === 0 ? 'Goes bad today — use it or replace it' : `Goes bad in ${st.days}d — use it or replace it`, icon: '⏰', kind: 'perish' });
-    else if (Number(it.qty) === 1 && ['ea', 'dozen', 'gal', 'loaf', 'jar', 'bottle', 'carton', 'bag', 'box', 'can', 'pack'].includes(it.unit) && FOOD_BY_ID[it.foodId] && !GEAR_CATS.has(it.cat) && !['household', 'spices', 'leftovers', 'storage'].includes(it.cat)) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Only 1 left', icon: '🪫', kind: 'few' });
+    if (['today', 'soon'].includes(st.key) && it.cat !== 'leftovers') push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: st.days === 0 ? 'Goes bad today — use it or replace it' : `Goes bad in ${st.days}d — use it or replace it`, icon: '⏰', group: 'perish' });
+    // a restock level or a check-in on it means you've said when you want to hear about it
+    else if (Number(it.qty) === 1 && (it.minQty == null || it.minQty === '') && !it.reorderDays && ['ea', 'dozen', 'gal', 'loaf', 'jar', 'bottle', 'carton', 'bag', 'box', 'can', 'pack'].includes(it.unit) && FOOD_BY_ID[it.foodId] && !GEAR_CATS.has(it.cat) && !['household', 'spices', 'leftovers', 'storage'].includes(it.cat)) push(key, { name: it.name, foodId: it.foodId, emoji: it.emoji, unit: it.unit, qty: 1, reason: 'Only 1 left', icon: '🪫', group: 'few' });
   }
   // Things you buy often but don't have
   const freq = {};
@@ -649,7 +693,7 @@ const VULGAR = { '¼': .25, '½': .5, '¾': .75, '⅓': 1 / 3, '⅔': 2 / 3, '�
 export const parseQty = v => {
   const t = String(v ?? '').trim().replace(',', '.');
   if (!t) return NaN;
-  const m = t.match(/^(\d+(?:\.\d+)?)?\s*(?:([¼½¾⅓⅔⅛⅜⅝⅞])|(\d+)\s*\/\s*(\d+))?$/);
+  const m = t.match(/^(\d+(?:\.\d*)?|\.\d+)?\s*(?:([¼½¾⅓⅔⅛⅜⅝⅞])|(\d+)\s*\/\s*(\d+))?$/);
   if (!m || (!m[1] && !m[2] && !m[3])) return NaN;
   const whole = m[1] ? Number(m[1]) : 0, frac = m[2] ? VULGAR[m[2]] : m[3] ? Number(m[3]) / Number(m[4] || 1) : 0;
   return m[3] && Number(m[4]) === 0 ? NaN : Math.round((whole + frac) * 1000) / 1000;

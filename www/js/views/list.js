@@ -1,9 +1,10 @@
 // Shopping list: tick things off in the store, then "put away" to move them into the kitchen
 // and read their real dates off the packages.
 
-import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money, myTripStore, storeName, aisleAt, setAisle, aisleOrder } from '../store.js';
+import { state, update, addToList, checkOffToStock, suggestions, catOf, fmtQty, sectionById, tint, activeTrips, priceInfo, money, myTripStore, storeName, aisleAt, setAisle, aisleOrder, subsFor, stillGood } from '../store.js';
+import { attachPicker, subsSheet } from '../ui/foodpicker.js';
 import { currentStore, storeEmoji, storeSearchUrl } from '../services/stores.js';
-import { CATEGORIES, searchFoods, FOOD_BY_ID } from '../data/foods.js';
+import { CATEGORIES, FOOD_BY_ID } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confetti, flyTo, openSheet, confirmBox } from '../ui/dom.js';
 import { labelWalk, dateSheet } from '../ui/itemSheet.js';
 import { actions } from '../router.js';
@@ -35,6 +36,8 @@ export function render(root) {
   const row = e => `<div class="lrow ${e.done ? 'done' : ''}" data-id="${e.id}">
           <button class="cb" data-check="${e.id}" aria-label="Check ${attr(e.name)}">${icon('check')}</button>
           <span class="lt" style="${tint(e.cat)}"><b><span class="lem">${e.emoji}</span>${esc(e.name)}${recalled.has(e.id) ? ' <span class="pill bad" title="Possible recall">⚠️ recall</span>' : ''}</b>${what(e) || e.aisle ? `<small class="l-what">${e.aisle ? `<span class="aisle-pill">${/^\d/.test(e.aisle) ? 'Aisle ' : ''}${esc(e.aisle)}</span> ` : ''}${esc(what(e))}</small>` : ''}${e.reasons?.length || e.by ? `<small>${e.by ? `<span class="by">${avatar(memberById(e.by), 16)} ${esc(firstName(e.by))}</span>${e.reasons?.length ? ' · ' : ''}` : ''}${esc((e.reasons || []).join(' · '))}</small>` : ''}
+          ${e.store && !e.aisle && !e.done ? `<button class="l-sub" data-setstore="${e.id}">📍 Find the aisle at ${esc(e.store)}</button>` : ''}
+          ${e.done ? '' : (() => { const subs = subsFor(e.foodId, e.name); return `<button class="l-sub" data-subs="${e.id}">🔁 ${subs.length ? `or ${esc(subs.map(s => s.name).join(', or '))}` : 'If it’s not there…'}</button>`; })()}
           ${byStore ? '' : `<button class="l-store" data-setstore="${e.id}">${e.store ? `${storeEmoji(e.store)} ${esc(e.store)}` : '＋ store'}</button>`}${byStore ? `<button class="l-store" data-setstore="${e.id}" aria-label="Move to another store">⇄</button>` : ''}</span>
           <span class="lq">${fmtQty(e.qty)} ${esc(e.unit)}${(() => { const pi = priceInfo(e.foodId, e.name), here = e.store && pi.byStore.find(p => p.store === e.store), c = pi.cheapest; return here ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(here.price)}${c && c.store !== e.store && c.price < here.price ? ` · ${money(c.price)} ${esc(c.store)}` : ''}</small>` : c ? `<small style="display:block;font-size:11px;color:var(--sage)">${money(c.price)} ${esc(c.store)}</small>` : ''; })()}</span>
           <button class="icon-btn" style="width:32px;height:32px;color:var(--ink-3);background:none;border:0" data-del="${e.id}" aria-label="Remove">${icon('close')}</button>
@@ -42,7 +45,7 @@ export function render(root) {
   const sugg = suggestions();
 
   const mineTrip = activeTrips().find(t => t.by === me()?.id);
-  const perish = sugg.filter(x => x.kind === 'perish' || x.kind === 'few'), restock = sugg.filter(x => !x.kind);
+  const perish = sugg.filter(x => x.group === 'perish' || x.group === 'few'), restock = sugg.filter(x => !x.group), checks = sugg.filter(x => x.group === 'check');
   const recalls = recallMatches(), recalled = new Set(recalls.flatMap(r => r.hits.filter(h => h.it.where === 'list').map(h => h.it.id)));
   const onList = new Set(open.filter(e => !e.done).map(e => e.foodId));
   const season = inSeason().map(id => FOOD_BY_ID[id]).filter(f => f && !onList.has(f.id));
@@ -50,11 +53,11 @@ export function render(root) {
   root.innerHTML = `
     ${tripBannerHTML()}
     <div data-live>${liveStripHTML()}</div>
-    <div class="row" style="margin:12px 12px 0;gap:8px">${mineTrip ? '' : `<button class="btn btn-wood wood-mid grow" data-trip-new>🚗 I'm going to the store</button>`}<button class="btn btn-ghost ${mineTrip ? 'grow' : ''}" data-receipt>🧾${mineTrip ? ' Scan receipt' : ''}</button></div>
+    <div class="row" style="margin:12px 12px 0;gap:8px">${mineTrip ? '' : `<button class="btn btn-wood wood-mid grow" data-trip-new>🚗 I'm going to the store</button>`}<button class="btn btn-ghost ${mineTrip ? 'grow' : ''}" data-receipt>🧾 Add receipt</button></div>
     <div class="row" style="margin:8px 12px 0;gap:8px"><button class="btn btn-ghost btn-sm grow" data-unitprice>⚖️ Which is cheaper?</button><button class="btn btn-ghost btn-sm grow" data-recipephoto>📖 Recipe photo</button><button class="btn btn-ghost btn-sm grow ${recalls.length ? 'recall-btn' : ''}" data-recalls>🛡️ ${recalls.length ? `${recalls.length} recall${recalls.length > 1 ? 's' : ''} to check` : 'Recalls'}</button></div>
-    <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new list="food-dl"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
-    <datalist id="food-dl"></datalist>
-    ${sugg.length ? `<div class="chips" style="margin-top:8px">${sugg.slice(0, 8).map(x => `<button class="chip" data-sugg="${sugg.indexOf(x)}" title="${attr(x.reason)}">${x.emoji} ${esc(x.name)} <span class="n">${x.icon}</span></button>`).join('')}</div>` : ''}
+    <div class="addbar" data-tour="list-add"><input class="input" placeholder="Add to list… (e.g. 2 lb apples)" data-new autocomplete="off"><button class="btn btn-brass" data-addnew aria-label="Add">${icon('plus')}</button></div>
+    ${checks.length ? `<div class="section-title"><h2>Time to check</h2></div><p class="small muted" style="margin:-6px 16px 8px">You asked to be reminded about these. Running low, or still good?</p><div class="stagger">${checks.map(s => `<div class="sugg" style="${tint(FOOD_BY_ID[s.foodId]?.cat)}"><span class="em" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${s.emoji}</span><span class="t"><b>${esc(s.name)}</b><small>${s.icon} ${esc(s.reason)}</small></span><button class="btn btn-ghost btn-sm" data-stillgood="${s.itemId}">Still good</button><button class="btn btn-sage btn-sm" data-sugg="${sugg.indexOf(s)}">Buy</button></div>`).join('')}</div>` : ''}
+    ${sugg.length ? `<div class="chips" style="margin-top:8px">${sugg.filter(x => x.group !== 'check').slice(0, 8).map(x => `<button class="chip" data-sugg="${sugg.indexOf(x)}" title="${attr(x.reason)}">${x.emoji} ${esc(x.name)} <span class="n">${x.icon}</span></button>`).join('')}</div>` : ''}
     ${done.length ? `<div style="margin:12px 12px 0"><button class="btn btn-sage btn-block" data-putaway>📦 Put away ${done.length} item${done.length > 1 ? 's' : ''} &amp; date them</button></div>` : ''}
     <div class="notepad-top wood-dark" style="margin-top:14px"></div>
     <div class="notepad" style="margin-top:0">
@@ -70,15 +73,19 @@ export function render(root) {
   `;
 
   const inp = $('[data-new]', root);
-  inp.oninput = () => { $('#food-dl', root).innerHTML = searchFoods(inp.value, 8).map(f => `<option value="${attr(f.name)}">`).join(''); };
-  const addNew = () => {
+  // "2 lb apples": the amount typed goes along with whichever result was tapped
+  const addNew = (picked = null) => {
     const v = inp.value.trim(); if (!v) return;
+    picker.hide();
     const m = v.match(/^(\d*\.?\d+)\s*(lb|lbs|oz|gal|dozen|ea|can|cans|bag|bags|box|jar|pack|bottle)?\s+(.+)$/i);
-    const added = m ? addToList({ name: m[3], qty: Number(m[1]), unit: m[2] ? m[2].toLowerCase().replace(/s$/, '') : undefined }) : addToList({ name: v });
+    const amount = m ? { qty: Number(m[1]), unit: m[2] ? m[2].toLowerCase().replace(/s$/, '') : undefined } : {};
+    const details = picked && !picked.typed ? { foodId: picked.foodId || undefined, emoji: picked.emoji, cat: picked.cat, unit: picked.unit, brand: picked.brand, size: picked.size } : {};
+    const added = addToList({ name: picked?.name || (m ? m[3] : v), ...details, ...(amount.qty ? { qty: amount.qty } : {}), ...(amount.unit ? { unit: amount.unit } : {}) });
     haptic(); toast(added ? 'Added' : 'Already on the list — bumped the amount', { icon: '📝' });
     setTimeout(() => $('[data-new]')?.focus(), 50);
   };
-  $('[data-addnew]', root).onclick = addNew;
+  const picker = attachPicker(inp, addNew);
+  $('[data-addnew]', root).onclick = () => addNew();
   inp.onkeydown = e => { if (e.key === 'Enter') addNew(); };
 
   root.onclick = async e => {
@@ -89,6 +96,8 @@ export function render(root) {
       update(s => { const x = s.shopping.find(y => y.id === id); if (x) { x.done = !x.done; x.boughtAt = x.done ? currentStore()?.name || myTripStore() || x.store || '' : ''; } }, 'list-check');
       return;
     }
+    const sb = e.target.closest('[data-subs]'); if (sb) { const x = state.shopping.find(y => y.id === sb.dataset.subs); if (x) subsSheet({ foodId: x.foodId, name: x.name, entryId: x.id }); return; }
+    const sgd = e.target.closest('[data-stillgood]'); if (sgd) { stillGood(sgd.dataset.stillgood); haptic(); toast('We’ll check again later', { icon: '👍' }); return; }
     const lg = e.target.closest('[data-listgroup] [data-v]'); if (lg) { haptic(); return update(s => { s.settings.listGroup = lg.dataset.v; }); }
     const ss = e.target.closest('[data-setstore]'); if (ss) return storePicker(ss.dataset.setstore);
     const del = e.target.closest('[data-del]');
@@ -171,7 +180,7 @@ function putAway() {
 async function shareList() {
   const groups = {};
   const byStore = state.settings.listGroup !== 'aisle';
-  for (const e of state.shopping.filter(x => !x.done)) (groups[byStore && e.store ? e.store : byStore ? 'Anywhere' : catOf(e.cat).name] ||= []).push(`☐ ${e.name}${[e.brand, e.kind, e.size].filter(Boolean).length ? ` (${[e.brand, e.kind, e.size].filter(Boolean).join(', ')})` : ''} — ${fmtQty(e.qty)} ${e.unit}`);
+  for (const e of state.shopping.filter(x => !x.done)) { const subs = subsFor(e.foodId, e.name); (groups[byStore && e.store ? e.store : byStore ? 'Anywhere' : catOf(e.cat).name] ||= []).push(`☐ ${e.name}${[e.brand, e.kind, e.size].filter(Boolean).length ? ` (${[e.brand, e.kind, e.size].filter(Boolean).join(', ')})` : ''} — ${fmtQty(e.qty)} ${e.unit}${subs.length ? `\n   or ${subs.map(s => s.name).join(', or ')}` : ''}`); }
   const text = '🛒 Shelf & Stock shopping list\n\n' + Object.entries(groups).map(([k, v]) => `${k}\n${v.join('\n')}`).join('\n\n');
   try {
     if (window.LarderNative?.share) window.LarderNative.share(text);

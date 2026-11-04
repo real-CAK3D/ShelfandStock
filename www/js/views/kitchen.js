@@ -1,6 +1,6 @@
 // Home: the illustrated house, room by room. Tap a door to swing it open and look inside.
 
-import { state, itemStatus, isLow, fmtDate, fmtQty, recipeById, recipeMatch, today, suggestions, sectionById, allRecipes, subscribe, tint } from '../store.js';
+import { state, itemStatus, needsBuying, fmtDate, fmtQty, recipeById, recipeMatch, today, suggestions, sectionById, allRecipes, subscribe, tint } from '../store.js';
 import { FOOD_BY_ID } from '../data/foods.js';
 import { HOUSE_ROOMS } from '../data/layout.js';
 import { esc, attr, icon, $, $$, countUp, imgOrEmoji, haptic } from '../ui/dom.js';
@@ -256,7 +256,7 @@ function greeting() {
 export function render(root) {
   const items = state.items;
   const expiring = items.filter(i => ['expired', 'today', 'soon'].includes(itemStatus(i).key)).sort((a, b) => (a.expires || '') < (b.expires || '') ? -1 : 1);
-  const low = items.filter(isLow);
+  const low = items.filter(needsBuying);
   const undated = items.filter(i => !i.dated && (i.dateType || 'Estimated') === 'Estimated' && i.expires);
   const todays = state.events.filter(e => e.date === today());
   const upcoming = state.events.filter(e => e.date > today()).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 3);
@@ -295,6 +295,7 @@ const here = HOUSE_ROOMS.find(h => h.id === place);
       <button class="stat t-sky" data-filter="low"><b data-count="${low.length}">0</b><span>Running low</span></button>
       <button class="stat t-sage" data-go="list"><b data-count="${state.shopping.filter(s => !s.done).length}">0</b><span>On the list</span></button>
     </div>
+    <button class="btn btn-wood wood-mid btn-block" style="margin:12px 12px 0;width:calc(100% - 24px)" data-addreceipt>🧾 Add a receipt</button>
 
     ${undated.length ? `<button class="where-banner" style="margin:12px 12px 0;width:calc(100% - 24px);text-align:left" data-labelall>🏷️ <span class="grow"><b>${undated.length} items have estimated dates.</b> Walk through and read the real dates off the packages.</span>${icon('next')}</button>` : ''}
 
@@ -343,6 +344,7 @@ const here = HOUSE_ROOMS.find(h => h.id === place);
     const g = e.target.closest('[data-go]'); if (g) return actions.go(g.dataset.go);
     const ev = e.target.closest('[data-ev]'); if (ev) return actions.openEvent(ev.dataset.ev);
     if (e.target.closest('[data-labelall]')) return labelWalk(undated.map(i => i.id), { title: 'Label your kitchen', onDone: () => actions.go('kitchen') });
+    if (e.target.closest('[data-addreceipt]')) return void import('../ui/receipt.js').then(m => m.receiptFlow());
     const sg = e.target.closest('[data-sugg]');
     if (sg) { const x = JSON.parse(sg.dataset.sugg); actions.addToListFrom(x, sg); }
   };
@@ -404,7 +406,7 @@ export function openZone(zoneId, { origin, highlight, section } = {}) {
               <h3>${esc(title)} <span style="opacity:.6;font-weight:600">${its.length + bxs.length}</span>${its.length && !door && !boxy ? `<button class="btn btn-sm" style="margin-left:auto;height:28px;font-size:11.5px;background:rgba(255,255,255,.18);color:inherit" data-labelsec="${s.id}">🏷️${z.layout === 'french' ? '' : ' Label shelf'}</button>` : ''}${boxy ? `<button class="btn btn-sm" style="margin-left:auto;height:28px;font-size:11.5px;background:rgba(255,255,255,.18);color:inherit" data-pack="${s.id}">📦 Pack</button>` : ''}</h3>
               ${boxy ? `<div class="shelf-boxes">${bxs.map(b => boxTileHTML(b)).join('')}${z.kind === 'rack' ? `<button class="sbox add" data-newbox="${s.id}" aria-label="Add a box to ${attr(s.name)}">＋<small>Box</small></button>` : ''}</div>` : ''}
               <div class="shelf-items">
-                ${its.map((i, n) => { const st = itemStatus(i); const k = st.key === 'ok' || st.key === 'none' ? (isLow(i) ? 'low' : '') : st.key; return `<button class="jar ${highlight === i.id ? 'hl' : ''}" data-item="${i.id}" style="animation-delay:${n * .04}s;${tint(i.cat)}">${k ? `<span class="st ${k}"></span>` : ''}${imgOrEmoji(i)}<div class="nm">${esc(i.name)}</div><div class="qt">${fmtQty(i.qty)} ${esc(i.unit)}</div></button>`; }).join('')}
+                ${its.map((i, n) => { const st = itemStatus(i); const k = st.key === 'ok' || st.key === 'none' ? (needsBuying(i) ? 'low' : '') : st.key; return `<button class="jar ${highlight === i.id ? 'hl' : ''}" data-item="${i.id}" style="animation-delay:${n * .04}s;${tint(i.cat)}">${k ? `<span class="st ${k}"></span>` : ''}${imgOrEmoji(i)}<div class="nm">${esc(i.name)}</div><div class="qt">${fmtQty(i.qty)} ${esc(i.unit)}</div></button>`; }).join('')}
                 <button class="add-jar" data-addsec="${s.id}" aria-label="Add to ${attr(s.name)}">＋</button>
               </div>
             </div>`;

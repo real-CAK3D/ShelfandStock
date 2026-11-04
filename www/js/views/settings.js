@@ -1,6 +1,6 @@
 // Settings: a menu of pages (look, cooking, storage by room, people, stores, notifications, sync, report, backup).
 
-import { state, update, replaceState, resetAll, seedSample, uid, migrate } from '../store.js';
+import { state, update, replaceState, resetAll, seedSample, uid, migrate, APP_VERSION } from '../store.js';
 import { ZONE_KINDS, suggestSection, HOUSE_ROOMS } from '../data/layout.js';
 import { FOOD_BY_ID, searchFoods } from '../data/foods.js';
 import { esc, attr, icon, $, $$, toast, haptic, confirmBox, openSheet } from '../ui/dom.js';
@@ -63,7 +63,7 @@ function home(s) {
       <p class="small muted" style="margin:0 0 10px">Adds notifications, the home-screen widget, and better product search. Open the file once it downloads; Android may ask you to allow installs from your browser.</p>
       <a class="btn btn-brass btn-block" href="https://github.com/real-CAK3D/ShelfandStock/releases/latest/download/ShelfAndStock.apk">${icon('download')} Download the app</a>
     </div>`}
-    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock 1.7 · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance · Food recalls from <b>openFDA</b> · Shopper prices from <b>Open Prices</b>.</p>`;
+    <p class="small muted" style="text-align:center;line-height:1.6">Shelf &amp; Stock ${APP_VERSION} · Product labels &amp; nutrition from <b>Open Food Facts</b> (ODbL) · Online recipes from <b>TheMealDB</b> · Storage times adapted from <b>USDA FoodKeeper</b> guidance · Food recalls from <b>openFDA</b> · Shopper prices from <b>Open Prices</b>.</p>`;
 }
 
 function head(title, backTo) {

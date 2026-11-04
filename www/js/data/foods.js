@@ -2,6 +2,8 @@
 // guidance (days; 0 = not recommended / not applicable for that storage).
 // Row: [name, emoji, category, home zone, fridge days, freezer days, pantry days, default unit, aliases]
 
+import { GROCERY_ROWS } from './groceries.js';
+
 export const CATEGORIES = [
   { id: 'produce', name: 'Produce', emoji: '🥬', color: '#6f9a4a' },
   { id: 'dairy', name: 'Dairy & Eggs', emoji: '🥛', color: '#d9c58f' },
@@ -450,7 +452,10 @@ const ROWS = [
 
 const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-export const FOODS = ROWS.map(([name, emoji, cat, zone, fridge, freezer, pantry, unit, aliases]) => ({
+const seenSlugs = new Set(ROWS.map(r => slug(r[0])));
+const MORE_ROWS = GROCERY_ROWS.filter(r => !seenSlugs.has(slug(r[0])) && seenSlugs.add(slug(r[0])));
+
+export const FOODS = [...ROWS, ...MORE_ROWS].map(([name, emoji, cat, zone, fridge, freezer, pantry, unit, aliases]) => ({
   id: slug(name), name, emoji, cat, zone,
   life: { fridge, freezer, pantry },
   unit,
@@ -492,13 +497,34 @@ export function matchFood(text) {
   return bestScore >= 42 ? best : null;
 }
 
+// one slip in a word ("tomatos", "bananna"), for words long enough that it isn't a different word
+const oneOff = (a, b) => {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, slips = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++slips > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return slips + (a.length - i) + (b.length - j) <= 1;
+};
+
 export function searchFoods(q, limit = 12) {
   const t = norm(q);
   if (!t) return [];
+  const words = t.split(' ').map(singular);
   const out = [];
   for (const f of FOODS) {
-    const hay = [f.name.toLowerCase(), ...f.aliases];
-    const idx = Math.min(...hay.map(h => { const i = h.indexOf(t); return i < 0 ? 999 : i + (h === f.name.toLowerCase() ? 0 : 5); }));
+    const hay = [f.name.toLowerCase(), ...f.aliases].map(norm);
+    const idx = Math.min(...hay.map((h, n) => {
+      const extra = n === 0 ? 0 : 5, i = h.indexOf(t);
+      if (i === 0 || (i > 0 && h[i - 1] === ' ')) return i + extra; // starts a word
+      if (i > 0) return 40 + extra;
+      const hw = h.split(' ');
+      if (words.every(w => hw.some(x => x.includes(w)))) return 60 + extra; // every word, in any order
+      if (t.length >= 4 && words.every(w => hw.some(x => oneOff(singular(x), w)))) return 80 + extra;
+      return 999;
+    }));
     if (idx < 999) out.push([idx + (f.cat === 'kitchenware' || f.cat === 'household' ? 3 : 0), f]);
   }
   return out.sort((a, b) => a[0] - b[0] || a[1].name.length - b[1].name.length).slice(0, limit).map(x => x[1]);

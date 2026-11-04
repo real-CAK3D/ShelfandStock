@@ -1,7 +1,7 @@
 // Item detail, editor, and the add-item flow (catalog search, barcode scan, label lookup).
 
 import { openPrices } from '../services/openprices.js';
-import { state, who, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, isLow, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty, kindFrom, storeName } from '../store.js';
+import { state, who, makeItem, addItem, saveItem, removeItem, adjustQty, addToList, sectionById, itemStatus, buyLabel, reorderDue, setBuySoon, stillGood, subsFor, fmtDate, fmtQty, catOf, allRecipes, recipeMatch, today, addDays, shelfLifeDays, storageKind, restockItem, setBatchDate, removeBatch, DATE_TYPES, span, priceInfo, money, parseQty, kindFrom, storeName } from '../store.js';
 import { FOOD_BY_ID, CATEGORIES, UNITS, searchFoods, matchFood, FOODS, GEAR_CATS, SUPPLY_CATS } from '../data/foods.js';
 import { openSheet, closeSheet, esc, attr, icon, toast, haptic, confirmBox, segmented, $, $$, imgOrEmoji, confetti } from './dom.js';
 import { nutritionLabel, productBadges } from './label.js';
@@ -10,6 +10,7 @@ import { storeSearchUrl, storeEmoji } from '../services/stores.js';
 import { identify, photoFromFile, hasNativeScanner, nativeScan } from '../services/vision.js';
 import { readText, parseDates } from '../services/ocr.js';
 import { loader } from './loader.js';
+import { subsSheet } from './foodpicker.js';
 import { actions } from '../router.js';
 
 export const crumb = it => { const s = sectionById(it.sectionId); const bx = it.boxId && (state.boxes || []).find(b => b.id === it.boxId); return s ? `${s.zone.name} › ${s.name}${bx ? ` › Box ${bx.code}` : ''}` : 'Unsorted'; };
@@ -41,11 +42,16 @@ export function showItem(id) {
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div class="stepper"><button data-q="-1" aria-label="Less">−</button><input value="${fmtQty(it.qty)}" readonly aria-label="Quantity"><button data-q="1" aria-label="More">+</button></div>
         <div class="muted" style="font-weight:600">${esc(it.unit)}</div>
-        <div class="row" style="gap:6px">${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}${isLow(it) ? '<span class="pill low">Low</span>' : ''}</div>
+        <div class="row" style="gap:6px">${st.label ? `<span class="pill ${st.key}">${st.label}</span>` : ''}${buyLabel(it) ? `<span class="pill low">${buyLabel(it)}</span>` : ''}</div>
       </div>
       <div class="row" style="gap:8px;margin-bottom:10px">
         ${gear ? '' : `<button class="btn btn-sage grow" data-a="used">${icon('check')} Used it up</button>`}
         <button class="btn btn-ghost grow" data-a="list">${icon('cart')} Add to list</button>
+      </div>
+      <div class="row wrap" style="gap:6px;margin-bottom:10px">
+        <button class="chip ${it.buySoon ? 'on' : ''}" data-a="soon">🔜 ${it.buySoon ? 'Buying soon' : 'Buy soon'}</button>
+        ${reorderDue(it) ? '<button class="chip" data-a="good">👍 Still good</button>' : ''}
+        <button class="chip" data-a="subs">🔁 ${subsFor(it.foodId, it.name).length ? `Or ${esc(subsFor(it.foodId, it.name)[0].name)}` : 'If it’s not there…'}</button>
       </div>
       <div class="row" style="gap:8px">
         <button class="btn btn-ghost btn-sm grow" data-a="edit">${icon('edit')} Edit</button>
@@ -62,7 +68,8 @@ export function showItem(id) {
       <div class="kv">
         ${undated ? `<div><small>Kind</small><b>${gear ? 'Gear' : 'Supply'}</b></div>` : `<div><small>${esc(it.dateType && it.dateType !== 'Estimated' ? it.dateType : 'Expires (est.)')}</small><b>${it.expires ? fmtDate(it.expires) : 'No date'}</b></div>`}
         <div><small>Added</small><b>${fmtDate(it.added)}</b></div>
-        <div><small>Restock at</small><b>${it.minQty != null && it.minQty !== '' ? `${fmtQty(it.minQty)} ${esc(it.unit)}` : 'Not set'}</b></div>
+        <div><small>Low at</small><b>${it.minQty != null && it.minQty !== '' ? `${fmtQty(it.minQty)} ${esc(it.unit)}` : 'Not set'}</b></div>
+        <div><small>Check it every</small><b>${it.reorderDays ? `${it.reorderDays} days` : 'Not set'}</b></div>
         <div><small>Category</small><b>${catOf(it.cat).emoji} ${esc(catOf(it.cat).name)}</b></div>
       </div>
       ${(() => {
@@ -111,6 +118,9 @@ export function showItem(id) {
         if (!await confirmBox(`Toss ${it.name}? It'll be logged as wasted so you can spot patterns.`, { ok: 'Toss it', danger: true })) return;
         removeItem(it.id, 'tossed'); close(); toast(`Tossed ${it.name}`, { icon: '🗑️' });
       };
+      b.querySelector('[data-a=soon]').onclick = () => { setBuySoon(it.id, !it.buySoon); haptic(); close(); showItem(it.id); };
+      b.querySelector('[data-a=good]')?.addEventListener('click', () => { stillGood(it.id); haptic(); close(); toast(`We’ll check again in ${it.reorderDays} days`, { icon: '👍' }); });
+      b.querySelector('[data-a=subs]').onclick = () => subsSheet({ foodId: it.foodId, name: it.name });
       b.querySelector('[data-a=list]').onclick = e => { const added = addToList({ ...listInfo(it), reason: 'Restock' }); toast(added ? 'Added to shopping list' : 'Already on your list', { icon: '🛒' }); haptic(); };
       b.querySelector('[data-a=edit]').onclick = async () => { if (await held()) return; close(); editItem(structuredClone(it)); };
       b.querySelector('[data-a=move]').onclick = async () => { if (await held()) return; moveItem(it, close); };
@@ -320,7 +330,8 @@ export function editItem(it, { isNew = false } = {}) {
         <p class="small muted expiry-hint" style="margin:-6px 0 12px"></p>
         <div class="row" style="gap:10px">
           <label class="field grow" style="${GEAR_CATS.has(it.cat) || SUPPLY_CATS.has(it.cat) ? 'display:none' : ''}"><span>Opened on</span><input class="input" type="date" name="openedOn" value="${attr(it.openedOn || '')}"></label>
-          <label class="field grow"><span>Restock when ≤</span><input class="input" name="minQty" inputmode="decimal" placeholder="e.g. 1" value="${attr(it.minQty ?? '')}"></label>
+          <label class="field grow"><span>Low at or below</span><input class="input" name="minQty" inputmode="decimal" placeholder="Blank = no alert" value="${attr(it.minQty ?? '')}"></label>
+          <label class="field grow"><span>Check every (days)</span><input class="input" name="reorderDays" inputmode="numeric" placeholder="e.g. 30" value="${attr(it.reorderDays ?? '')}"></label>
         </div>
         ${it.batches?.length ? `<p class="small muted" style="margin:-6px 0 12px">This item has ${it.batches.length} batches — quantity changes come out of the oldest first.</p>` : ''}
         <label class="field"><span>Category</span><select class="input" name="cat">${CATEGORIES.map(c => `<option value="${c.id}" ${c.id === it.cat ? 'selected' : ''}>${c.emoji} ${esc(c.name)}</option>`).join('')}</select></label>
@@ -361,6 +372,8 @@ export function editItem(it, { isNew = false } = {}) {
           ...it, ...data,
           name: data.name.trim() || it.name, emoji: data.emoji.trim() || it.emoji,
           qty: isFinite(parseQty(data.qty)) ? parseQty(data.qty) : Number(it.qty) || 0, minQty: data.minQty === '' || !isFinite(parseQty(data.minQty)) ? null : parseQty(data.minQty),
+          reorderDays: Math.round(Number(data.reorderDays)) > 0 ? Math.round(Number(data.reorderDays)) : null,
+          checkedOn: Math.round(Number(data.reorderDays)) !== Number(it.reorderDays || 0) ? today() : it.checkedOn || null,
           expires: data.expires || null, tags: data.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
           openedOn: data.openedOn || null, opened: !!data.openedOn, image: photo,
           brand: (data.brand || '').trim(), kind: (data.kind || '').trim(), size: (data.size || '').trim(), store: (data.store || '').trim(),

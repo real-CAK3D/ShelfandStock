@@ -39,7 +39,7 @@ const HELP = [
   ['.wall .slot', '🗄️ Cabinet', 'Tap to swing the door open and see each shelf. Rename it in Settings to whatever you call it at home.'],
   ['.chest[data-zone=holiday]', '🎁 Holiday closet', 'Roasting pan, cookie cutters, the good platter. Tag items “thanksgiving”, “christmas” or “party” and they appear on that holiday in the calendar with their location.'],
   ['.chest[data-go=settings]', '🧰 Add storage', 'Have a garage freezer, basement shelf or bar cart? Add it in Settings and it shows up here.'],
-  ['.stat', '📊 Quick counts', 'Use soon = expiring within your warning window. Running low = at or below the restock level you set. On the list = items still to buy. Tap one to jump to that list.'],
+  ['.stat', '📊 Quick counts', 'Use soon = expiring within your warning window. Running low = at or below the level you set, marked Buy soon, or due for a check. On the list = items still to buy. Tap one to jump to that list.'],
   ['[data-labelall]', '🏷️ Label your dates', 'These items only have estimated dates. Tap to walk through them one by one and enter the date printed on each package.'],
   ['.tile', '⏰ Use it or lose it', 'Items closest to their date. Tap one for details, to mark it used, or to find recipes that use it.'],
   ['.sugg', '💡 You should get', 'Suggestions from items running low, things you usually keep, and ingredients your planned meals need. Tap ＋ to add one to your list.'],
